@@ -9,8 +9,9 @@ https://docs.djangoproject.com/en/2.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/2.2/ref/settings/
 """
-from .email_info import *
+
 import os
+from .email_info import EMAIL_BACKEND, EMAIL_HOST, EMAIL_PORT, EMAIL_USE_TLS, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD
 
 EMAIL_USE_TLS= EMAIL_USE_TLS
 EMAIL_HOST = EMAIL_HOST
@@ -21,6 +22,7 @@ EMAIL_BACKEND=EMAIL_BACKEND
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+LOGIN_URL = '/managerLogin/'  # ✅ Change this to match your actual login URL
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
@@ -46,6 +48,10 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 ]
+LOGIN_URL = {
+    'manager': '/managerLogin/',
+    'employee': '/employeeLogin/',
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

@@ -28,8 +28,8 @@ from django.contrib import messages
 from files.models import Employee, Medicine
 from django.conf import settings
 from django.urls import get_resolver
-
-
+from django.http import HttpResponseRedirect
+from server.email_info import EMAIL_HOST_USER
 
 
 
@@ -68,7 +68,7 @@ def managerLogin(request):
             user = User.objects.get(username=email)  # Get user by email
             if user.check_password(password):  # Check hashed password
                 login(request, user)
-                return redirect("/addEmployee/")
+                return redirect("managerDashboard")
             else:
                 messages.error(request, "Invalid credentials.")
         except User.DoesNotExist:
@@ -139,19 +139,33 @@ def managerRegister(request):
                                                           
 login_required(login_url='files:manLog')
 
-def addEmployee(request):
-    available_urls = [name for name, pattern in get_resolver().reverse_dict.items() if hasattr(pattern, 'pattern')]
+from django.urls import reverse, Resolver404, get_resolver
 
-    print(f"🔍 Available URL Names: {available_urls}") 
+
+def addEmployee(request):
+    """Add a new employee and send them login credentials via email."""
+
+    # ✅ Debug - Check Available URLs
+    try:
+        available_urls = [name for name in get_resolver().reverse_dict.keys() if isinstance(name, str)]
+        print(f"🔍 Available URL Names: {available_urls}")  
+
+        resolved_url = reverse("files:addEmployee")  # ✅ Try resolving the URL
+        print(f"🔍 Resolved URL for addEmployee: {resolved_url}")
+    except Resolver404 as e:
+        logger.error(f"⚠️ Reverse resolution failed: {e}")
+        messages.error(request, "Internal error: URL resolution failed.")
+        return redirect("files:managerDashboard")  
+
     user = request.user  # ✅ Get the logged-in manager
-    print(f"🔍 DEBUG: Logged-in manager -> {user.username}")  # ✅ Debugging
+    print(f"🔍 DEBUG: Logged-in manager -> {user.username}")  
 
     # ✅ Check if the manager has a medicine assigned
     try:
         med = Medicine.objects.get(manager=user)
     except Medicine.DoesNotExist:
         messages.error(request, "No medicine assigned. Register a medicine first.")
-        return redirect("managerDashboard")  # ✅ Redirect correctly
+        return redirect("files:managerDashboard")  
 
     if request.method == "POST":
         emp_name = request.POST.get("inputName", "").strip()
@@ -165,36 +179,53 @@ def addEmployee(request):
             messages.error(request, "An employee with this email already exists.")
             return render(request, "files/addEmployee.html")
 
-        # ✅ Generate a secure password
+        # ✅ Generate a secure random password
         random_password = "".join(random.choices(string.ascii_letters + string.digits, k=10))
+        hashed_password = make_password(random_password)  
 
         try:
-            # ✅ Check if Employee model has a password field
-            if hasattr(Employee, "password"):  
-                hashed_password = make_password(random_password)
-                emp = Employee.objects.create(
-                    email=emp_email,
-                    name=emp_name,
-                    manager_name=user.username,
-                    medicine_name=med.medicine_name,
-                    password=hashed_password,  # ✅ Only if password field exists
-                )
-            else:
-                emp = Employee.objects.create(
-                    email=emp_email,
-                    name=emp_name,
-                    manager_name=user.username,
-                    medicine_name=med.medicine_name,
-                )
+            emp = Employee.objects.create(
+                email=emp_email,
+                name=emp_name,
+                manager_name=user.username,
+                medicine_name=med.medicine_name,
+                password=hashed_password,  
+            )
 
-            print(f"✅ Employee Created: {emp.email}")  # ✅ Debugging
+            print(f"✅ Employee Created: {emp.email}")  
             messages.success(request, f"Employee '{emp_name}' added successfully.")
+
+            # ✅ Send Login Credentials via Email
+            subject = "Your DevMust Impex Employee Login Details"
+            message = f"""
+            Dear {emp_name},
+
+            Your employee account has been created.
+
+            ✅ Username: {emp_email}
+            ✅ Password: {random_password} (Please change it after logging in)
+
+            🔗 Login Here: http://127.0.0.1:8000/employeeLogin/
+
+            Best Regards,  
+            DevMust Impex Team
+            """
+            recipient_list = [emp_email]
+
+            try:
+                send_mail(subject, message, EMAIL_HOST_USER, recipient_list, fail_silently=False)
+                messages.success(request, f"Login details sent to {emp_email}.")
+                logger.info(f"✅ Email sent successfully to {emp_email}")
+            except Exception as e:
+                logger.error(f"❌ Email sending failed for {emp_email}. Error: {e}")
+                messages.error(request, "Employee added, but email could not be sent.")
 
         except Exception as e:
             logger.error(f"❌ Error creating employee {emp_email}: {e}")
             messages.error(request, f"Failed to add employee. Error: {e}")
 
-        return redirect("files:addEmployee")  # ✅ Ensure this matches `urls.py`
+        print("✅ DEBUG: Redirecting to addEmployee")
+        return HttpResponseRedirect(reverse("files:addEmployee"))
 
     return render(request, "files/addEmployee.html")
 
@@ -365,7 +396,7 @@ def addComponent(request, employee_id):
     return render(request, 'files/employee.html', {'employee':element, 'med_name': med_name})
 
 
-@login_required
+@login_required(login_url='/managerLogin/')
 def managerDashboard(request):
     return render(request, "files/managerDashboard.html")  # ✅ Ensure this template exists
 

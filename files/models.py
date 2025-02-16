@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password
+from django.contrib.auth.models import AbstractBaseUser
+
 
 
 class Employee(models.Model):
@@ -9,7 +11,8 @@ class Employee(models.Model):
      name = models.CharField(max_length=100, default=None)
      manager_name = models.CharField(max_length=100, default=None)
      medicine_name = models.CharField(max_length=100, default=None)
-     password = models.CharField(max_length=128, default=make_password("defaultpassword123"))  # ✅ Add max_length
+     password = models.CharField(max_length=128,  blank=True, null=True, default=make_password("defaultpassword123"))  # ✅ Add max_length
+     last_login = models.DateTimeField(auto_now=True)
 
      def __str__(self):
         return self.name

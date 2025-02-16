@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path,include
 from . import views
-#from files.views import addEmployee  # ✅ Ensure this import is correct
+from files.views import addEmployee  # ✅ Ensure this import is correct
 
 
 app_name = 'files'
