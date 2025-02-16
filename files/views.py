@@ -10,177 +10,283 @@ from django.conf import settings
 from django.core.mail import send_mail
 import random, datetime
 from django.contrib.auth.decorators import login_required
+import random
+from django.contrib import messages
+from django.shortcuts import redirect
+import logging
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
+import os
+import logging
+import random  # ✅ Ensure random is imported
+import string
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.hashers import make_password
+from django.contrib.auth.hashers import check_password
+
+
+
+
+# Set up logging for email errors
+logger = logging.getLogger(__name__)
 
 
 def employeeLogin(request):
-    if request.method == 'POST':
-        email = request.POST['email'] 
-        password = request.POST['password']       
-        if Employee.objects.filter(email=email).exists() and password=="password":
-            element = Employee.objects.get(email=email)
-            return redirect('/employee/' + str(element.id))
-            # return redirect('addComponent', employee_id=element.id)
+    if request.method == "POST":
+        email = request.POST.get("email")
+        password = request.POST.get("password")
 
-    return render(request, 'files/employeeLogin.html')
+        try:
+            employee = Employee.objects.get(email=email)
+            if check_password(password, employee.password):  # ✅ Correct hash verification
+                login(request, employee)  
+                return redirect(f"/employee/{employee.id}/")
+            else:
+                messages.error(request, "Invalid credentials.")
+        except Employee.DoesNotExist:
+            messages.error(request, "No such employee found.")
+
+    return render(request, "files/employeeLogin.html")
 
 def newPassword(request):
     return render(request, 'files/newPassword.html')
 
 def managerLogin(request):
-    logout(request)
-    if request.POST:
-        username = request.POST.get('email')
-        password = request.POST.get('password')
-        print(username,password)
-        user = authenticate(username = username, password = password)
+    logout(request)  # Ensure the previous session is cleared
+    if request.method == "POST":
+        email = request.POST.get("email")
+        password = request.POST.get("password")
 
-        if user is not None:
-            if user.is_active:
-                login(request,user)
-                return redirect('/addEmployee/')
+        try:
+            user = User.objects.get(username=email)  # Get user by email
+            if user.check_password(password):  # Check hashed password
+                login(request, user)
+                return redirect("/addEmployee/")
+            else:
+                messages.error(request, "Invalid credentials.")
+        except User.DoesNotExist:
+            messages.error(request, "User not found.")
 
-    return render(request, 'files/managerLogin.html')
+    return render(request, "files/managerLogin.html")
+
 
 def managerRegister(request):
-    if request.method == 'POST':
-
+    if request.method == "POST":
         user_form = ManagerForm(request.POST)
-        medicine = request.POST.get('medicine')
+        medicine = request.POST.get("medicine", "").strip()
+
         if user_form.is_valid():
             user = user_form.save(commit=False)
-            username = user_form.cleaned_data['username']
-            password = user_form.cleaned_data['password']
+            username = user_form.cleaned_data.get("username", "defaultuser")
+            password = user_form.cleaned_data.get("password", "defaultpassword123")
             user.set_password(password)
             user.save()
-            priv,pub = paillier.generate_keypair(256)
-            aes_key = AESCipher.gen_key()
-            a = priv.get_list()
-            priv1 = a[0]
-            priv2 = a[1]
-            file_key = password
-            medicine = AESCipher.encrypt(medicine,aes_key)
-            medicine = medicine.hex()
-            med = Medicine.objects.create(manager = user, medicine_name = medicine)
-            med.save()
-            while len(file_key) != 32:
-                file_key = file_key + str(random.randint(0,9))
-            file_key = file_key.encode('UTF-8')
-            print()
-            print("pub " + str(type(pub)) + " " + str(pub))
-            print("priv1 " + str(type(priv1)))
-            print("priv2 " + str(type(priv2)))
-            print("aes_key " + str(type(aes_key)) + " " + str(aes_key))
-            print()
-            f = open("manager.txt","w+")
-            f.write(str(pub) + "\n")
-            f.write(str(priv1) + "\n")
-            f.write(str(priv2) + "\n")
-            f.write(aes_key.hex())
-            f.close()
-            #AESCipher.encrypt_file(password,'manager.txt')
-            f = open("employee.txt","w+")
-            f.write(str(pub) + "\n")
-            f.write(aes_key.hex())
-            f.close()
-            #AESCipher.encrypt_file('password','employee.txt')
-            login(request, authenticate(username=username, password=password))
 
-            return redirect('/addEmployee/')
+            try:
+                key_size = 256  
+                pub, priv = paillier.generate_keypair(int(key_size))
+                aes_key = AESCipher.gen_key()
+                priv1, priv2 = priv.get_list()
+
+                file_key = str(password)
+                while len(file_key) < 32:
+                    file_key += str(random.randint(0, 9))
+                file_key = file_key.encode("UTF-8")
+
+                encrypted_medicine = AESCipher.encrypt(medicine, aes_key).hex()
+                med, created = Medicine.objects.get_or_create(manager=user, medicine_name=encrypted_medicine)
+
+                # ✅ Ensure manager.txt and employee.txt exist
+                with open("manager.txt", "w") as f:
+                    f.write(f"{pub}\n{priv1}\n{priv2}\n{aes_key.hex()}")
+
+                with open("employee.txt", "w") as f:
+                    f.write(f"{pub}\n{aes_key.hex()}")
+
+                # ✅ Authenticate & login user
+                user = authenticate(username=username, password=password)
+                if user:
+                    login(request, user)
+                    return redirect("/addEmployee/")
+                else:
+                    messages.error(request, "Authentication failed.")
+                    return render(request, "files/managerRegister.html", {"user_form": user_form})
+
+            except Exception as e:
+                logger.error(f"Error during manager registration: {e}")
+                messages.error(request, f"Registration failed: {e}")
+                return render(request, "files/managerRegister.html", {"user_form": user_form})
+
     else:
-                user_form = ManagerForm()
+        user_form = ManagerForm()
 
-    return render(request,'files/managerRegister.html', {'user_form': user_form})               
+    return render(request, "files/managerRegister.html", {"user_form": user_form})
 
-
-
+                                                          
 login_required(login_url='files:manLog')
-def addEmployee(request):
-    user = User.objects.get(username = request.user.username)
-    med = Medicine.objects.get(manager = user)
-    if request.method == 'POST':
-        emp_name = request.POST['inputName']
-        emp_email = request.POST['inputEmail3']
-        print(emp_name)
-        emp_obj = Employee.objects.create(email=emp_email,name=emp_name,manager_name = user.username,medicine_name = med.medicine_name )
-        emp_obj.save()
-        subject = "Important Notfication"
-        message = 'Following is your username and password to login in DevMust Impex ' \
-                  'Username: ' + emp_email + ' Password: password'
-        from_email = settings.EMAIL_HOST_USER
-        to_list = [emp_email,from_email]
-        send_mail(subject=subject,from_email=from_email,message=message,recipient_list=to_list,fail_silently=True)
-        return render(request, 'files/addEmployee.html')
-    else:
-        return render(request,'files/addEmployee.html')
 
+def addEmployee(request):
+    user = request.user
+
+    try:
+        med = Medicine.objects.get(manager=user)
+    except Medicine.DoesNotExist:
+        messages.error(request, "No medicine assigned. Register a medicine first.")
+        return render(request, "files/managerDashboard.html")  # ✅ Stay on managerDashboard
+
+    if request.method == "POST":
+        emp_name = request.POST.get("inputName", "").strip()
+        emp_email = request.POST.get("inputEmail3", "").strip()
+
+        if not emp_name or not emp_email:
+            messages.error(request, "Employee name and email are required.")
+            return render(request, "files/addEmployee.html")
+
+        if Employee.objects.filter(email=emp_email).exists():
+            messages.error(request, "An employee with this email already exists.")
+            return render(request, "files/addEmployee.html")
+
+        random_password = "".join(random.choices(string.ascii_letters + string.digits, k=10))
+        hashed_password = make_password(random_password)
+
+        try:
+            Employee.objects.create(
+                email=emp_email,
+                name=emp_name,
+                manager_name=user.username,
+                medicine_name=med.medicine_name,
+                password=hashed_password,
+            )
+            messages.success(request, f"Employee '{emp_name}' added successfully.")
+        except Exception as e:
+            logger.error(f"Error creating employee {emp_email}: {e}")
+            messages.error(request, "Failed to add employee.")
+
+        return redirect("addEmployee")
+
+    return render(request, "files/addEmployee.html")
 
 login_required(login_url='files:manLog')
 def logs(request):
     log = Log.objects.all()
-    file = open('manager.txt')
-    all_lines = file.readlines() 
-    pub = int(all_lines[0])
-    priv1 = int(all_lines[1])
-    priv2 = int(all_lines[2])
-    aes = all_lines[3]
-    aes = bytes.fromhex(aes) 
-    values = []
+    manager_file_path = "manager.txt"
 
-    ctr = 1
-    for item in log: 
-        comp_name = item.component_name
-        comp_name = bytes.fromhex(comp_name)
-        name = AESCipher.decrypt(aes, comp_name)
-        quantity = paillier.decrypt(priv1, priv2, pub, int(item.component_quantity)) 
-        cost = paillier.decrypt(priv1, priv2, pub, int(item.component_cost)) 
-        value = {}
-        value['ctr'] = ctr
-        value['created'] = item.created
-        value['ename'] = item.name
-        value['cname'] = name
-        value['quantity'] = quantity
-        value['cost'] = cost
-        values.append(value)
-        ctr = ctr+1
+    if not os.path.exists(manager_file_path):
+        messages.error(request, "Error: manager.txt file is missing.")
+        return render(request, "files/logs.html", {"values": []})
 
-    return render(request, 'files/logs.html', {'values': values})
+    try:
+        with open(manager_file_path, "r") as file:
+            all_lines = file.readlines()
+
+        if len(all_lines) < 4:
+            messages.error(request, "Error: manager.txt file is incomplete.")
+            return render(request, "files/logs.html", {"values": []})
+
+        pub = int(all_lines[0].strip())
+        priv1 = int(all_lines[1].strip())
+        priv2 = int(all_lines[2].strip())
+        aes = bytes.fromhex(all_lines[3].strip())
+
+        values = []
+        ctr = 1
+        for item in log:
+            try:
+                comp_name = bytes.fromhex(item.component_name)
+                name = AESCipher.decrypt(aes, comp_name)
+                quantity = paillier.decrypt(priv1, priv2, pub, int(item.component_quantity))
+                cost = paillier.decrypt(priv1, priv2, pub, int(item.component_cost))
+
+                values.append({
+                    "ctr": ctr,
+                    "created": item.created,
+                    "ename": item.name,
+                    "cname": name,
+                    "quantity": quantity,
+                    "cost": cost,
+                })
+                ctr += 1
+            except Exception as e:
+                logger.error(f"Decryption error for log entry {ctr}: {e}")
+
+        return render(request, "files/logs.html", {"values": values})
+
+    except Exception as e:
+        logger.error(f"Error reading manager.txt: {e}")
+        messages.error(request, f"Error reading manager.txt: {e}")
+        return render(request, "files/logs.html", {"values": []})
+
 
 login_required(login_url='files:manLog')
+
+
 def display(request):
-    file = open('manager.txt')
-    all_lines = file.readlines() 
-    pub = int(all_lines[0])
-    priv1 = int(all_lines[1])
-    priv2 = int(all_lines[2])
-    aes = all_lines[3]
-    aes = bytes.fromhex(aes) 
-    #comp = Component.objects.all()
-    user = User.objects.get(username = request.user)
-    med = Medicine.objects.get(manager = user)
-    comp = Component.objects.filter(key = med)
+    manager_file_path = "manager.txt"
 
-    med_name = med.medicine_name
-    med_name = bytes.fromhex(med_name)
-    med_name = AESCipher.decrypt(aes, med_name)
-    values = []
+    if not os.path.exists(manager_file_path):
+        messages.error(request, "Error: manager.txt file is missing.")
+        return render(request, "files/display.html", {"values": []})
 
-    ctr = 1
-    for item in comp: 
-        comp_name = item.component_name
-        comp_name = bytes.fromhex(comp_name)
-        name = AESCipher.decrypt(aes, comp_name)
-        quantity = paillier.decrypt(priv1, priv2, pub, int(item.component_quantity)) 
-        cost = paillier.decrypt(priv1, priv2, pub, int(item.component_cost)) 
-        value = {}
-        value['ctr'] = ctr
-        value['name'] = name
-        value['quantity'] = quantity
-        value['cost'] = cost
-        values.append(value)
-        ctr = ctr+1
+    try:
+        with open(manager_file_path, "r") as file:
+            all_lines = file.readlines()
 
-    return render(request, 'files/display.html', {'values':values, 'med_name': med_name})
+        if len(all_lines) < 4:
+            messages.error(request, "Error: manager.txt file is incomplete.")
+            return render(request, "files/display.html", {"values": []})
 
+        pub = int(all_lines[0].strip())
+        priv1 = int(all_lines[1].strip())
+        priv2 = int(all_lines[2].strip())
+        aes = bytes.fromhex(all_lines[3].strip())
+
+        try:
+            user = User.objects.get(username=request.user.username)
+        except User.DoesNotExist:
+            messages.error(request, "Error: User not found.")
+            return render(request, "files/display.html", {"values": []})
+
+        try:
+            med = Medicine.objects.get(manager=user)
+        except Medicine.DoesNotExist:
+            messages.error(request, "Error: No medicine assigned to this manager.")
+            return render(request, "files/display.html", {"values": []})
+
+        comp = Component.objects.filter(key=med)
+
+        try:
+            med_name = bytes.fromhex(med.medicine_name)
+            med_name = AESCipher.decrypt(aes, med_name)
+        except Exception as e:
+            messages.error(request, f"Error decrypting medicine name: {e}")
+            return render(request, "files/display.html", {"values": []})
+
+        values = []
+        ctr = 1
+
+        for item in comp:
+            try:
+                comp_name = bytes.fromhex(item.component_name)
+                name = AESCipher.decrypt(aes, comp_name)
+                quantity = paillier.decrypt(priv1, priv2, pub, int(item.component_quantity))
+                cost = paillier.decrypt(priv1, priv2, pub, int(item.component_cost))
+
+                values.append({
+                    "ctr": ctr,
+                    "name": name,
+                    "quantity": quantity,
+                    "cost": cost,
+                })
+                ctr += 1
+            except Exception as e:
+                logger.error(f"Error processing component {item.id}: {e}")
+
+        return render(request, "files/display.html", {"values": values, "med_name": med_name})
+
+    except Exception as e:
+        logger.error(f"Unexpected error in display function: {e}")
+        messages.error(request, "An unexpected error occurred.")
+        return render(request, "files/display.html", {"values": []})
 def medicineName(request):
     return render(request, 'files/medicineName.html')    
 
@@ -225,6 +331,11 @@ def addComponent(request, employee_id):
         # return render(request, 'files/employee.html')              
 
     return render(request, 'files/employee.html', {'employee':element, 'med_name': med_name})
+
+
+@login_required
+def managerDashboard(request):
+    return render(request, "files/managerDashboard.html")  # ✅ Ensure this template exists
 
 # def register(request):
 #     medicine_name = "Crocin"
