@@ -1,6 +1,8 @@
 import math
 from . import primes
 
+
+
 def invmod(a, p, maxiter=1000000):
     """The multiplicitive inverse of a in the integers modulo p:
          a * b == 1 mod p
@@ -59,15 +61,15 @@ class PublicKey(object):
         return  str(self.n)
 
 def generate_keypair(bits):
-    p = primes.generate_prime(bits / 2)
-    q = primes.generate_prime(bits / 2)
+    p = primes.generate_prime(bits // 2)
+    q = primes.generate_prime(bits // 2)
     #print(p,q)
     n = p * q
     return PrivateKey(p, q, n), PublicKey(n)
 
 def encrypt(pub, plain):
     while True:
-        r = primes.generate_prime(int(round(math.log(pub, 2))))
+        r = primes.generate_prime(max(2, int(round(math.log(pub, 2)))))
         if r > 0 and r < pub:
             break
     pub_n_sq = pub*pub

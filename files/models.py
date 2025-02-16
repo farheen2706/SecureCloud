@@ -1,13 +1,17 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.contrib.auth.hashers import make_password
+
 
 class Employee(models.Model):
-    email = models.EmailField(max_length=100, unique=True, default=None)
-    name = models.CharField(max_length=100, default=None)
-    manager_name = models.CharField(max_length=100,default=None)
-    medicine_name = models.CharField(max_length=100,default=None)
+     id = models.BigAutoField(primary_key=True)  # ✅ Explicit primary key
+     email = models.EmailField(max_length=100, unique=True, default=None)
+     name = models.CharField(max_length=100, default=None)
+     manager_name = models.CharField(max_length=100, default=None)
+     medicine_name = models.CharField(max_length=100, default=None)
+     password = models.CharField(max_length=128, default=make_password("defaultpassword123"))  # ✅ Add max_length
 
-    def __str__(self):
+     def __str__(self):
         return self.name
 
 class Medicine(models.Model):

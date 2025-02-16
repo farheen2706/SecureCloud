@@ -12,7 +12,7 @@ import random, datetime
 from django.contrib.auth.decorators import login_required
 import random
 from django.contrib import messages
-from django.shortcuts import redirect
+from django.shortcuts import redirect, reverse
 import logging
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
@@ -23,6 +23,13 @@ import string
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.hashers import check_password
+from django.core.mail import send_mail
+from django.contrib import messages
+from files.models import Employee, Medicine
+from django.conf import settings
+from django.urls import get_resolver
+
+
 
 
 
@@ -83,10 +90,18 @@ def managerRegister(request):
             user.save()
 
             try:
-                key_size = 256  
-                pub, priv = paillier.generate_keypair(int(key_size))
+                key_size = 256  # ✅ Ensure integer key size
+                print(f"🔍 Debug: Type of key_size = {type(key_size)}, Value = {key_size}")
+
+                # ✅ Generate keypair (Fix: Extract 'n' from PublicKey object)
+                priv, pub_obj = paillier.generate_keypair(key_size)
+                pub = int(pub_obj.n)  # ✅ Extract integer from PublicKey object
+
+                print(f"🔍 Debug: Type of pub = {type(pub)}, Value = {pub}")  # ✅ Now pub is an integer
+
+                priv1, priv2 = priv.get_list()  # Extract private key parts
+
                 aes_key = AESCipher.gen_key()
-                priv1, priv2 = priv.get_list()
 
                 file_key = str(password)
                 while len(file_key) < 32:
@@ -113,26 +128,30 @@ def managerRegister(request):
                     return render(request, "files/managerRegister.html", {"user_form": user_form})
 
             except Exception as e:
-                logger.error(f"Error during manager registration: {e}")
-                messages.error(request, f"Registration failed: {e}")
+                logger.error(f"⚠️ Error during manager registration: {e}")
+                messages.error(request, f"Registration failed due to an error: {e}")
                 return render(request, "files/managerRegister.html", {"user_form": user_form})
 
     else:
         user_form = ManagerForm()
 
     return render(request, "files/managerRegister.html", {"user_form": user_form})
-
                                                           
 login_required(login_url='files:manLog')
 
 def addEmployee(request):
-    user = request.user
+    available_urls = [name for name, pattern in get_resolver().reverse_dict.items() if hasattr(pattern, 'pattern')]
 
+    print(f"🔍 Available URL Names: {available_urls}") 
+    user = request.user  # ✅ Get the logged-in manager
+    print(f"🔍 DEBUG: Logged-in manager -> {user.username}")  # ✅ Debugging
+
+    # ✅ Check if the manager has a medicine assigned
     try:
         med = Medicine.objects.get(manager=user)
     except Medicine.DoesNotExist:
         messages.error(request, "No medicine assigned. Register a medicine first.")
-        return render(request, "files/managerDashboard.html")  # ✅ Stay on managerDashboard
+        return redirect("managerDashboard")  # ✅ Redirect correctly
 
     if request.method == "POST":
         emp_name = request.POST.get("inputName", "").strip()
@@ -146,23 +165,36 @@ def addEmployee(request):
             messages.error(request, "An employee with this email already exists.")
             return render(request, "files/addEmployee.html")
 
+        # ✅ Generate a secure password
         random_password = "".join(random.choices(string.ascii_letters + string.digits, k=10))
-        hashed_password = make_password(random_password)
 
         try:
-            Employee.objects.create(
-                email=emp_email,
-                name=emp_name,
-                manager_name=user.username,
-                medicine_name=med.medicine_name,
-                password=hashed_password,
-            )
-            messages.success(request, f"Employee '{emp_name}' added successfully.")
-        except Exception as e:
-            logger.error(f"Error creating employee {emp_email}: {e}")
-            messages.error(request, "Failed to add employee.")
+            # ✅ Check if Employee model has a password field
+            if hasattr(Employee, "password"):  
+                hashed_password = make_password(random_password)
+                emp = Employee.objects.create(
+                    email=emp_email,
+                    name=emp_name,
+                    manager_name=user.username,
+                    medicine_name=med.medicine_name,
+                    password=hashed_password,  # ✅ Only if password field exists
+                )
+            else:
+                emp = Employee.objects.create(
+                    email=emp_email,
+                    name=emp_name,
+                    manager_name=user.username,
+                    medicine_name=med.medicine_name,
+                )
 
-        return redirect("addEmployee")
+            print(f"✅ Employee Created: {emp.email}")  # ✅ Debugging
+            messages.success(request, f"Employee '{emp_name}' added successfully.")
+
+        except Exception as e:
+            logger.error(f"❌ Error creating employee {emp_email}: {e}")
+            messages.error(request, f"Failed to add employee. Error: {e}")
+
+        return redirect("files:addEmployee")  # ✅ Ensure this matches `urls.py`
 
     return render(request, "files/addEmployee.html")
 
