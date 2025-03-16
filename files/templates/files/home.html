@@ -1,0 +1,20 @@
+{% extends "files/base_manager.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="card shadow-lg mx-auto" style="max-width: 600px; border-radius: 10px;">
+        <div class="card-header text-center bg-dark text-white">
+            <h2>Welcome to SecureCloud</h2>
+        </div>
+        <div class="card-body text-center">
+            <p class="lead">Securely manage your company data with encryption.</p>
+
+            <div class="d-grid gap-3 mt-4">
+                <a href="{% url 'manReg' %}" class="btn btn-primary btn-lg">Register as Manager</a>
+                <a href="{% url 'manLog' %}" class="btn btn-success btn-lg">Manager Login</a>
+                <a href="{% url 'empLog' %}" class="btn btn-secondary btn-lg">Employee Login</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,6 +1,8 @@
 from django import forms
 from .models import Employee
 from django.contrib.auth.models import User
+from django import forms
+from .models import CompanyData, DataRecord
 
 # class Medicine(forms.ModelForm):
 #     class Meta:
@@ -19,3 +21,13 @@ class ManagerForm(forms.ModelForm):
 		model = User
 		fields = ('username', 'password',)
 		help_texts = {'username': None, 'password': None}
+
+class CompanyDataForm(forms.ModelForm):  # Previously MedicineForm
+    class Meta:
+        model = CompanyData
+        fields = ["company_name", "data_type", "encrypted_data"]
+
+class DataRecordForm(forms.ModelForm):  # Previously ComponentForm
+    class Meta:
+        model = DataRecord
+        fields = ["record_name", "record_content"]

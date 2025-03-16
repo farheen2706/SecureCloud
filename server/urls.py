@@ -13,18 +13,18 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+
 from django.contrib import admin
 from django.urls import path,include
-from files import views 
-from files.views import addEmployee  # ✅ Ensure this import is correct
+from files.views import addDataRecord# ✅ Ensure this import is correct
+from files.views import CompanyData
+from files import views  # ✅ Correct if views.py is in files/
 
-app_name = "files"
+
+
+app_name = 'files'
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('',include('files.urls')),
-    path("managerDashboard/", views.managerDashboard, name="managerDashboard"),  # ✅ Add this
-    
     path('managerRegister/', views.managerRegister, name='manReg'),
     path('managerLogin/', views.managerLogin, name='manLog'),
     path('employeeLogin/', views.employeeLogin, name='empLog'),
@@ -32,10 +32,14 @@ urlpatterns = [
     path('addEmployee/', views.addEmployee, name='addEmployee'),
     path('logs/', views.logs, name='logs'),
     path('display/', views.display, name='display'),
-    path('medicineName/', views.medicineName, name='logout'),
-    path('employee/<int:employee_id>/', views.addComponent, name='addComponent'),
-    path("managerDashboard/", views.managerDashboard, name="managerDashboard")
+    path('companyData/', views.CompanyData, name='logout'),
+    path("employee/<int:employee_id>/", views.addDataRecord, name="addDataRecord"),
+    path("managerDashboard/", views.managerDashboard, name="managerDashboard"),
+    path("admin/", admin.site.urls),
+    path("", include("files.urls")),
 
-
-
+    # path('<int:med_id>/',views.add_component,name='constituent'),
+    # path('list/',views.home,name='home'),
+    # path('list/<int:id>/',views.retrieve_components,name='retrieve'),
 ]
+

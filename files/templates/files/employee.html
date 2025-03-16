@@ -48,25 +48,25 @@
 		<div class="container content">
 			<div class="card card-outline-secondary">
                         <div class="card-header text-center">
-                            <h3 class="mb-0">Add {{ med_name }} Component Details</h3>
+                            <h3 class="mb-0">Add {{ med_name }} Company Data</h3>
                         </div>
                         <div class="card-body">
                             <form class="form" method="POST" role="form" autocomplete="off">
                             	{% csrf_token %}
                             	<br>
                                 <div class="form-group">
-                                    <label for="inputName">Component Name</label>
-                                    <input type="text" class="form-control" id="inputName" name="inputName" placeholder="Name" required="">
+                                    <label for="inputName">Folder Name</label>
+                                    <input type="text" class="form-control" id="inputName" name="inputName" placeholder="Folder Name" required="">
                                 </div>
                                 <br>
                                 <div class="form-group">
-                                    <label for="inputQuantity">Component Quantity</label>
-                                    <input type="number" class="form-control" id="inputQuantity" name="inputQuantity" placeholder="Quantity" required="">
+                                    <label for="inputQuantity">Number of files</label>
+                                    <input type="number" class="form-control" id="inputQuantity" name="inputQuantity" placeholder="Number" required="">
                                 </div>
                                 <br>
                                 <div class="form-group">
-                                    <label for="inputCost">Component Cost</label>
-                                    <input type="number" class="form-control" id="inputCost" name="inputCost" placeholder="Cost" required="">
+                                    <label for="inputCost">Number of subfiles</label>
+                                    <input type="number" class="form-control" id="inputCost" name="inputCost" placeholder="Subfiles" required="">
                                 </div>
                                 <br>
                                 <div class="form-group text-center">
