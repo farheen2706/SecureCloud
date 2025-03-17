@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/2.2/ref/settings/
 
 import os
 from .email_info import EMAIL_BACKEND, EMAIL_HOST, EMAIL_PORT, EMAIL_USE_TLS, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD
+from supabase import create_client, Client
 
 EMAIL_USE_TLS= EMAIL_USE_TLS
 EMAIL_HOST = EMAIL_HOST
@@ -32,6 +33,10 @@ LOGIN_URL = '/managerLogin/'  # ✅ Change this to match your actual login URL
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = '()i!=sop=7e5oa5f&c6@3tvdofr+xi$adkj1p4-y7mdp0*(!&m'
+SUPABASE_URL= "https://aeegjfvrzmjjbauhlhuv.supabase.co"
+SUPABASE_KEY= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlZWdqZnZyem1qamJhdWhsaHV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIxNjgwMTIsImV4cCI6MjA1Nzc0NDAxMn0.UrWX9dYtURdMaSQ13zQZnlEDWHLfbgJLbvpAxI5dVc0"
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True

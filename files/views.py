@@ -13,7 +13,7 @@ from django.contrib.auth.models import User
 from django.shortcuts import render
 from django.contrib.auth import logout
 from django.views.decorators.csrf import csrf_protect
-from django.utils.timezone import now 
+from django.utils.timezone import now
 from django.contrib.auth.hashers import make_password
 from django.db import models
 from django.shortcuts import get_object_or_404
@@ -23,10 +23,8 @@ from django.shortcuts import render
 from .models import Log, Employee
 
 
-
-
 # 🔹 Import Paillier Encryption & AES Cipher for Secure Data Handling
-from . import paillier, AESCipher  
+from . import paillier, AESCipher
 
 # 🔹 Import Models (Updated for Company Data Storage)
 from files.models import Employee, DataRecord, Log  # ✅ Correct Import
@@ -42,18 +40,21 @@ from server.email_info import EMAIL_HOST_USER
 def home(request):
     return render(request, "files/home.html")  # Renders home.html
 
+
 def logs(request):
     manager = request.user
 
     # ✅ Fetch logs for employees under the logged-in manager
-    log_entries = Log.objects.filter(employee__manager=manager).order_by('-timestamp')
+    log_entries = Log.objects.filter(employee__manager=manager).order_by("-timestamp")
 
-    return render(request, 'files/logs.html', {'logs': log_entries})
+    return render(request, "files/logs.html", {"logs": log_entries})
+
 
 def logout_view(request):
     """Logs out the user and redirects to the home page."""
     logout(request)
     return redirect("home")
+
 
 # Set up logging for email errors
 logger = logging.getLogger(__name__)
@@ -68,10 +69,14 @@ def employeeLogin(request):
             employee = Employee.objects.get(email=email)
             print(f"✅ Employee found: {email}")
 
-            if check_password(password, employee.password):  # ✅ Compare hashed password
-                login(request, employee)  
+            if check_password(
+                password, employee.password
+            ):  # ✅ Compare hashed password
+                login(request, employee)
                 print(f"✅ Login successful: {email}")
-                return redirect(f"/employee/{employee.id}/")  # Change this to employee dashboard if needed
+                return redirect(
+                    f"/employee/{employee.id}/"
+                )  # Change this to employee dashboard if needed
             else:
                 print(f"❌ Incorrect password for {email}")
                 messages.error(request, "Invalid credentials. Please try again.")
@@ -83,8 +88,10 @@ def employeeLogin(request):
 
     return render(request, "files/employeeLogin.html")
 
+
 def newPassword(request):
-    return render(request, 'files/newPassword.html')
+    return render(request, "files/newPassword.html")
+
 
 def managerLogin(request):
     logout(request)  # Ensure the previous session is cleared
@@ -115,12 +122,13 @@ import random
 import logging
 
 logger = logging.getLogger(__name__)
+
+
 @csrf_protect
 def managerRegister(request):
     if request.method == "POST":
         user_form = ManagerForm(request.POST)
         company_name = request.POST.get("CompanyData", "").strip()
-
 
         if user_form.is_valid():
             user = user_form.save(commit=False)
@@ -130,25 +138,32 @@ def managerRegister(request):
             user.save()
 
             try:
-                key_size = 256  
-                print(f"🔍 Debug: Type of key_size = {type(key_size)}, Value = {key_size}")
+                key_size = 256
+                print(
+                    f"🔍 Debug: Type of key_size = {type(key_size)}, Value = {key_size}"
+                )
 
                 priv, pub_obj = paillier.generate_keypair(key_size)
-                pub = int(pub_obj.n)  
+                pub = int(pub_obj.n)
 
                 print(f"🔍 Debug: Type of pub = {type(pub)}, Value = {pub}")
 
-                priv1, priv2 = priv.get_list()  
+                priv1, priv2 = priv.get_list()
                 aes_key = AESCipher.gen_key()
 
-                file_key = (password or "defaultpassword123").encode("utf-8")[:32].ljust(32, b'0')  # ✅ Secure key
+                file_key = (
+                    (password or "defaultpassword123")
+                    .encode("utf-8")[:32]
+                    .ljust(32, b"0")
+                )  # ✅ Secure key
 
-                encrypted_CompanyData = AESCipher.encrypt(company_name, aes_key).hex()  # ✅ Encrypt the input data
-                
+                encrypted_CompanyData = AESCipher.encrypt(
+                    company_name, aes_key
+                ).hex()  # ✅ Encrypt the input data
+
                 # ✅ Correct get_or_create usage
                 company_instance, created = CompanyData.objects.get_or_create(
-                    manager=user,
-                    defaults={"company_name": encrypted_CompanyData}  
+                    manager=user, defaults={"company_name": encrypted_CompanyData}
                 )
 
                 with open("manager.txt", "w") as f:
@@ -160,23 +175,29 @@ def managerRegister(request):
                 user = authenticate(username=username, password=password)
                 if user:
                     login(request, user)
-                    return redirect(reverse("files:addEmployee"))  # ✅ Redirect properly
+                    return redirect(
+                        reverse("files:addEmployee")
+                    )  # ✅ Redirect properly
                 else:
                     messages.error(request, "Authentication failed.")
-                    return render(request, "files/managerRegister.html", {"user_form": user_form})
+                    return render(
+                        request, "files/managerRegister.html", {"user_form": user_form}
+                    )
 
             except Exception as e:
                 logger.error(f"⚠️ Error during manager registration: {e}")
                 messages.error(request, f"Registration failed due to an error: {e}")
-                return render(request, "files/managerRegister.html", {"user_form": user_form})
+                return render(
+                    request, "files/managerRegister.html", {"user_form": user_form}
+                )
 
     else:
         user_form = ManagerForm()
 
     return render(request, "files/managerRegister.html", {"user_form": user_form})
 
-                                                          
-login_required(login_url='files:manLog')
+
+login_required(login_url="files:manLog")
 
 from django.urls import reverse, Resolver404, get_resolver
 
@@ -199,17 +220,19 @@ def addEmployee(request):
 
     # ✅ Debugging - Check Available URLs
     try:
-        available_urls = [name for name in get_resolver().reverse_dict.keys() if isinstance(name, str)]
-        print(f"🔍 Available URL Names: {available_urls}")  
+        available_urls = [
+            name for name in get_resolver().reverse_dict.keys() if isinstance(name, str)
+        ]
+        print(f"🔍 Available URL Names: {available_urls}")
 
         resolved_url = reverse("files:addEmployee")  # ✅ Try resolving the URL
         print(f"🔍 Resolved URL for addEmployee: {resolved_url}")
     except Resolver404 as e:
         logger.error(f"⚠️ Reverse resolution failed: {e}")
         messages.error(request, "Internal error: URL resolution failed.")
-        return redirect("files:managerDashboard")  
+        return redirect("files:managerDashboard")
 
-    print(f"🔍 DEBUG: Logged-in manager -> {manager_user.username}")  
+    print(f"🔍 DEBUG: Logged-in manager -> {manager_user.username}")
 
     if request.method == "POST":
         emp_name = request.POST.get("inputName", "").strip()
@@ -226,20 +249,24 @@ def addEmployee(request):
             return render(request, "files/addEmployee.html")
 
         # ✅ Generate a secure random password
-        random_password = "".join(random.choices(string.ascii_letters + string.digits, k=10))
-        hashed_password = make_password(random_password)  # 🔥 Hash password before storing
+        random_password = "".join(
+            random.choices(string.ascii_letters + string.digits, k=10)
+        )
+        hashed_password = make_password(
+            random_password
+        )  # 🔥 Hash password before storing
 
         try:
             # ✅ Create employee record with correct `manager` and `company`
             emp = Employee.objects.create(
                 email=emp_email,
                 name=emp_name,
-                manager=manager_user,  # ✅ Ensure this is a `User` instance
-                company=company_data,  # ✅ Ensure this is a `CompanyData` instance
-                password=make_password(random_password),  
+                manager=manager_user,
+                company=company_data,
+                password=make_password(random_password),
             )
 
-            print(f"✅ Employee Created: {emp.email}")  
+            print(f"✅ Employee Created: {emp.email}")
             messages.success(request, f"Employee '{emp_name}' added successfully.")
 
             # ✅ Send Login Credentials via Email
@@ -260,7 +287,13 @@ def addEmployee(request):
             recipient_list = [emp_email]
 
             try:
-                send_mail(subject, message, settings.EMAIL_HOST_USER, recipient_list, fail_silently=False)
+                send_mail(
+                    subject,
+                    message,
+                    settings.EMAIL_HOST_USER,
+                    recipient_list,
+                    fail_silently=False,
+                )
                 messages.success(request, f"Login details sent to {emp_email}.")
                 logger.info(f"✅ Email sent successfully to {emp_email}")
             except Exception as e:
@@ -276,12 +309,13 @@ def addEmployee(request):
 
     return render(request, "files/addEmployee.html")
 
-login_required(login_url='files:manLog')
+
+login_required(login_url="files:manLog")
 
 
 def display(request):
     manager_file_path = "manager.txt"
-    
+
     if not os.path.exists(manager_file_path):
         messages.error(request, "Error: manager.txt file is missing.")
         return render(request, "files/display.html", {"values": []})
@@ -333,47 +367,72 @@ def display(request):
                 quantity = paillier.decrypt(priv1, priv2, pub, int(item.record_content))
                 cost = paillier.decrypt(priv1, priv2, pub, int(item.date_added))
 
-                values.append({
-                    "ctr": ctr,
-                    "name": name,
-                    "quantity": quantity,
-                    "cost": cost,
-                })
+                values.append(
+                    {
+                        "ctr": ctr,
+                        "name": name,
+                        "quantity": quantity,
+                        "cost": cost,
+                    }
+                )
                 ctr += 1
             except Exception as e:
                 logger.error(f"Error processing DataRecord {item.id}: {e}")
 
-        return render(request, "files/display.html", {"values": values, "med_name": med.company_name})
+        return render(
+            request,
+            "files/display.html",
+            {"values": values, "med_name": med.company_name},
+        )
 
     except Exception as e:
         logger.error(f"Unexpected error in display function: {e}")
         messages.error(request, "An unexpected error occurred.")
-        return render(request, "files/display.html", {"values": values, "med_name": med.company_name})
+        return render(
+            request,
+            "files/display.html",
+            {"values": values, "med_name": med.company_name},
+        )
 
 
 def CompanyDataName(request):
-    return render(request, 'files/CompanyDataName.html')    
+    return render(request, "files/CompanyDataName.html")
 
-login_required(login_url='files:empLog')
+
+login_required(login_url="files:empLog")
+
+
 def addDataRecord(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
-    companyData = employee.company  
+    companyData = employee.company
 
-    file_path = 'employee.txt'
+    file_path = "employee.txt"
     if not os.path.exists(file_path):
-        return render(request, 'files/employee.html', {'employee': employee, 'error': "Key file missing"})
+        return render(
+            request,
+            "files/employee.html",
+            {"employee": employee, "error": "Key file missing"},
+        )
 
     with open(file_path, "r") as file:
         all_lines = file.readlines()
 
     if len(all_lines) < 2:
-        return render(request, 'files/employee.html', {'employee': employee, 'error': "Invalid key file format"})
+        return render(
+            request,
+            "files/employee.html",
+            {"employee": employee, "error": "Invalid key file format"},
+        )
 
     # ✅ Ensure pub_key is an integer
     try:
         pub_key = int(all_lines[0].strip())
     except ValueError:
-        return render(request, 'files/employee.html', {'employee': employee, 'error': "Invalid public key format"})
+        return render(
+            request,
+            "files/employee.html",
+            {"employee": employee, "error": "Invalid public key format"},
+        )
 
     aes_key = bytes.fromhex(all_lines[1].strip())
 
@@ -384,21 +443,29 @@ def addDataRecord(request, employee_id):
             med_name = bytes.fromhex(med_name)
             med_name = AESCipher.decrypt(aes_key, med_name)
         except Exception as e:
-            return render(request, 'files/employee.html', {'employee': employee, 'error': f"Decryption error: {e}"})
+            return render(
+                request,
+                "files/employee.html",
+                {"employee": employee, "error": f"Decryption error: {e}"},
+            )
 
-    if request.method == 'POST':
+    if request.method == "POST":
         employee_name = employee.name
         date_field = datetime.now()
-        name = request.POST.get('inputName', "").strip()
-        quantity = request.POST.get('inputQuantity', "0").strip()
-        cost = request.POST.get('inputCost', "0").strip()
+        name = request.POST.get("inputName", "").strip()
+        quantity = request.POST.get("inputQuantity", "0").strip()
+        cost = request.POST.get("inputCost", "0").strip()
 
         # ✅ Ensure proper type conversions
         try:
             quantity = int(quantity)
             cost = int(float(cost))  # Convert cost to float first, then integer
         except ValueError:
-            return render(request, 'files/employee.html', {'employee': employee, 'error': "Invalid quantity or cost value"})
+            return render(
+                request,
+                "files/employee.html",
+                {"employee": employee, "error": "Invalid quantity or cost value"},
+            )
 
         # ✅ Encrypt name using AES
         new_name = AESCipher.encrypt(name, aes_key).hex()
@@ -407,32 +474,40 @@ def addDataRecord(request, employee_id):
 
         # ✅ Get or Create Data Record
         data_record, created = DataRecord.objects.get_or_create(
-        record_name=new_name,  
-        key=companyData,  # ✅ Correct key association
-        defaults={"record_content": str(new_quantity), "date_added": timezone.now()}  # ✅ Ensure correct fields
-    )
+            record_name=new_name,
+            key=companyData,  # ✅ Correct key association
+            defaults={
+                "record_content": str(new_quantity),
+                "date_added": timezone.now(),
+            },  # ✅ Ensure correct fields
+        )
 
         if not created:
-            existing_quantity = int(data_record.record_content)  # ✅ Convert encrypted value back to int
+            existing_quantity = int(
+                data_record.record_content
+            )  # ✅ Convert encrypted value back to int
             updated_quantity = paillier.e_add(pub_key, existing_quantity, new_quantity)
             data_record.record_content = str(updated_quantity)  # ✅ Store as string
             data_record.save()
 
         # ✅ Fix: Create `Log` entry with correct fields
         log_entry = Log.objects.create(
-            employee=employee,  
-            timestamp=date_field,  
+            employee=employee,
+            timestamp=date_field,
             data_record=data_record,  # ✅ Linking DataRecord correctly
-            quantity=quantity,  
-            cost=cost  
+            quantity=quantity,
+            cost=cost,
         )
         log_entry.save()
 
         return HttpResponseRedirect(reverse("files:addDataRecord", args=[employee.id]))
 
-    return render(request, 'files/employee.html', {'employee': employee, 'med_name': med_name})
+    return render(
+        request, "files/employee.html", {"employee": employee, "med_name": med_name}
+    )
 
-@login_required(login_url='/managerLogin/')
+
+@login_required(login_url="/managerLogin/")
 def managerDashboard(request):
     manager = request.user
 
@@ -440,9 +515,13 @@ def managerDashboard(request):
     employees = Employee.objects.filter(manager=manager)
 
     # ✅ Fetch activity logs for these employees
-    logs = Log.objects.filter(employee__in=employees).order_by('-timestamp')
+    logs = Log.objects.filter(employee__in=employees).order_by("-timestamp")
 
-    return render(request, 'files/managerDashboard.html', {'logs': logs, 'employees': employees})
+    return render(
+        request, "files/managerDashboard.html", {"logs": logs, "employees": employees}
+    )
+
+
 # def register(request):
 #     CompanyData_name = "Crocin"
 #     file = open('manager.txt')
