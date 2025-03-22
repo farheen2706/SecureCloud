@@ -22,7 +22,7 @@ EMAIL_PORT=EMAIL_PORT
 EMAIL_BACKEND=EMAIL_BACKEND
 LOGIN_REDIRECT_URL = "home"  # Redirect to home after login
 LOGOUT_REDIRECT_URL = "home"  # Redirect to home after logout
-
+DEBUG = False
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

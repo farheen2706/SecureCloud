@@ -1,0 +1,1 @@
+web: gunicorn SecureCloud.wsgi --log-file -
