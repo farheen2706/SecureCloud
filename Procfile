@@ -1,1 +1,1 @@
-web: gunicorn SecureCloudProject.wsgi --log-file -
+web: gunicorn PharmaSecure.wsgi --log-file -
