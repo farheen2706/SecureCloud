@@ -1,1 +1,1 @@
-web: gunicorn PharmaSecure.wsgi --log-file -
+gunicorn server.wsgi:application
