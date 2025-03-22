@@ -42,7 +42,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 DEBUG = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-ALLOWED_HOSTS = ["https://securecloud.onrender.com"]
+ALLOWED_HOSTS = ["securecloud.onrender.com", "127.0.0.1", "localhost"]
 
 # Static Files Handling
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
