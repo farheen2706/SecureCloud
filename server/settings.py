@@ -43,7 +43,7 @@ DEBUG = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 ALLOWED_HOSTS = ["securecloud.onrender.com", "127.0.0.1", "localhost"]
-
+print(f"🔍 DEBUG: ALLOWED_HOSTS = {ALLOWED_HOSTS}")
 # Static Files Handling
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 STATIC_URL = "/static/"
