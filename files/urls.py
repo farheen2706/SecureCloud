@@ -3,7 +3,7 @@ from django.urls import path,include
 from . import views
 from files.views import addDataRecord# ✅ Ensure this import is correct
 from files.views import CompanyData
-
+from .views import forgot_password, reset_password, change_password
 
 app_name = 'files'
 
@@ -19,6 +19,9 @@ urlpatterns = [
     path("companyData/", views.logout_view, name="logout"),
     path("employee/<int:employee_id>/", views.addDataRecord, name="addDataRecord"),
     path("managerDashboard/", views.managerDashboard, name="managerDashboard"),
+    path('forgot-password/', forgot_password, name='forgot_password'),
+    path('reset-password/<uidb64>/<token>/', reset_password, name='reset_password'),
+    path('change-password/', change_password, name='change_password'),
 
 
 
