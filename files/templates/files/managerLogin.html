@@ -1,25 +1,28 @@
 {% extends "files/base_login.html" %}
 
 {% block content %}
-<div class="container d-flex justify-content-center align-items-center vh-100">
-    <div class="card p-4 shadow" style="max-width: 350px; width: 100%;">
-        <h3 class="text-center mb-3">🔐 Manager Login</h3>
 
-        <form method="POST">
-            {% csrf_token %}
-
-            <div class="mb-3">
-                <label for="username" class="form-label">Username</label>
-                <input type="text" name="username" id="username" class="form-control" required>
-            </div>
-
-            <div class="mb-3">
-                <label for="password" class="form-label">Password</label>
-                <input type="password" name="password" id="password" class="form-control" required>
-            </div>
-
-            <button type="submit" class="btn btn-primary w-100">Login</button>
-        </form>
+<form method="post">
+    {% csrf_token %}
+    <h3 class="text-light text-center"><b>Manager Login</b></h3>
+    <br>
+    <div class="input-group mb-3">
+        <div class="input-group-append">
+            <span class="input-group-text"><i class="fa fa-user"></i></span>
+        </div>
+        <input type="text" name="username" id="username" autocomplete="off" class="input form-control mx-2" placeholder="Username">
     </div>
-</div>
-{% endblock %}
+    <div class="input-group mb-2">
+        <div class="input-group-append">
+            <span class="input-group-text"><i class="fa fa-key"></i></span>
+        </div>
+        <input type="password" name="password" id="password" autocomplete="off" class="input form-control mx-2" placeholder="Password">
+    </div>
+    <br>
+    <div class="d-flex justify-content-center mt-3 login_container">
+        <button type="submit" name="button" class="btn login_btn">Login</button>
+    </div>
+    <br>
+</form>
+
+{% endblock content %}
