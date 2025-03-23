@@ -46,12 +46,28 @@ def home(request):
 
 
 def logs(request):
-    manager = request.user
+    """Fetch logs for employees under the logged-in manager from Supabase."""
 
-    # ✅ Fetch logs for employees under the logged-in manager
-    log_entries = Log.objects.filter(employee__manager=manager).order_by("-timestamp")
+    manager_id = request.user.id
 
-    return render(request, "files/logs.html", {"logs": log_entries})
+    # ✅ Fetch employees managed by the logged-in manager
+    employee_response = supabase.table("employees").select("id").eq("manager_id", manager_id).execute()
+
+    if not employee_response.data:
+        messages.error(request, "No employees found under this manager.")
+        return render(request, "files/logs.html", {"logs": []})
+
+    employee_ids = [emp["id"] for emp in employee_response.data]
+
+    # ✅ Fetch logs associated with those employees
+    logs_response = supabase.table("logs").select("*").in_("employee_id", employee_ids).order("timestamp", desc=True).execute()
+
+    if not logs_response.data:
+        messages.warning(request, "No log entries found.")
+        return render(request, "files/logs.html", {"logs": []})
+
+    return render(request, "files/logs.html", {"logs": logs_response.data})
+
 
 
 def logout_view(request):
@@ -139,10 +155,11 @@ logger = logging.getLogger(__name__)
 
 
 @csrf_protect
+@csrf_protect
 def managerRegister(request):
     if request.method == "POST":
         user_form = ManagerForm(request.POST)
-        company_name = request.POST.get("CompanyData", "").strip()
+        company_name = request.POST.get("company_name", "").strip()  # ✅ Ensure correct field name
 
         if user_form.is_valid():
             user = user_form.save(commit=False)
@@ -153,62 +170,45 @@ def managerRegister(request):
 
             try:
                 key_size = 256
-                print(
-                    f"🔍 Debug: Type of key_size = {type(key_size)}, Value = {key_size}"
-                )
-
                 priv, pub_obj = paillier.generate_keypair(key_size)
                 pub = int(pub_obj.n)
-
-                print(f"🔍 Debug: Type of pub = {type(pub)}, Value = {pub}")
-
                 priv1, priv2 = priv.get_list()
                 aes_key = AESCipher.gen_key()
 
-                file_key = (
-                    (password or "defaultpassword123")
-                    .encode("utf-8")[:32]
-                    .ljust(32, b"0")
-                )  # ✅ Secure key
+                # ✅ Encrypt company name
+                encrypted_company_name = AESCipher.encrypt(company_name, aes_key).hex()
 
-                encrypted_CompanyData = AESCipher.encrypt(
-                    company_name, aes_key
-                ).hex()  # ✅ Encrypt the input data
-
-                # ✅ Correct get_or_create usage
-                company_instance, created = CompanyData.objects.get_or_create(
-                    manager=user, defaults={"company_name": encrypted_CompanyData}
+                # ✅ Ensure company data is correctly stored
+                company_instance, created = CompanyData.objects.update_or_create(
+                    manager=user, defaults={"company_name": encrypted_company_name}
                 )
 
+                # ✅ Store keys securely
                 with open("manager.txt", "w") as f:
                     f.write(f"{pub}\n{priv1}\n{priv2}\n{aes_key.hex()}")
 
                 with open("employee.txt", "w") as f:
                     f.write(f"{pub}\n{aes_key.hex()}")
 
+                # ✅ Authenticate and redirect
                 user = authenticate(username=username, password=password)
                 if user:
                     login(request, user)
-                    return redirect(
-                        reverse("files:addEmployee")
-                    )  # ✅ Redirect properly
+                    return redirect(reverse("files:addEmployee"))
                 else:
                     messages.error(request, "Authentication failed.")
-                    return render(
-                        request, "files/managerRegister.html", {"user_form": user_form}
-                    )
+                    return render(request, "files/managerRegister.html", {"user_form": user_form})
 
             except Exception as e:
                 logger.error(f"⚠️ Error during manager registration: {e}")
                 messages.error(request, f"Registration failed due to an error: {e}")
-                return render(
-                    request, "files/managerRegister.html", {"user_form": user_form}
-                )
+                return render(request, "files/managerRegister.html", {"user_form": user_form})
 
     else:
         user_form = ManagerForm()
 
     return render(request, "files/managerRegister.html", {"user_form": user_form})
+
 
 
 login_required(login_url="files:manLog")
