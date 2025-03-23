@@ -38,16 +38,7 @@ from .forms import ManagerForm, CompanyDataForm, DataRecordForm
 from server.email_info import EMAIL_HOST_USER
 from supabase import create_client, Client
 from django.conf import settings
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.utils.encoding import force_bytes
-from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from django.conf import settings
 
-User = get_user_model()
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
 def home(request):
@@ -653,80 +644,6 @@ def managerDashboard(request):
         request, "files/managerDashboard.html", {"logs": logs, "employees": employees}
     )
 
-def forgot_password(request):
-    if request.method == "POST":
-        email = request.POST.get("email")
-        try:
-            user = User.objects.get(email=email)
-            token = default_token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            reset_link = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
-
-            # Send email
-            send_mail(
-                "Password Reset Request",
-                f"Click the link to reset your password: {reset_link}",
-                settings.EMAIL_HOST_USER,
-                [email],
-                fail_silently=False,
-            )
-
-            messages.success(request, "A password reset link has been sent to your email.")
-            return redirect("forgot_password")
-
-        except User.DoesNotExist:
-            messages.error(request, "Email not found.")
-    
-    return render(request, "files/forgot_password.html")
-
-def reset_password(request, uidb64, token):
-    try:
-        uid = urlsafe_base64_decode(uidb64).decode()
-        user = User.objects.get(pk=uid)
-    except (User.DoesNotExist, ValueError, TypeError):
-        messages.error(request, "Invalid password reset link.")
-        return redirect("forgot_password")
-
-    if not default_token_generator.check_token(user, token):
-        messages.error(request, "Password reset link has expired.")
-        return redirect("forgot_password")
-
-    if request.method == "POST":
-        new_password = request.POST.get("password")
-        confirm_password = request.POST.get("confirm_password")
-
-        if new_password == confirm_password:
-            user.set_password(new_password)
-            user.save()
-            messages.success(request, "Your password has been reset successfully.")
-            return redirect("files:empLog")  # Redirect to login
-        else:
-            messages.error(request, "Passwords do not match.")
-
-    return render(request, "files/reset_password.html")
-
-from django.contrib.auth.decorators import login_required
-from django.contrib.auth import update_session_auth_hash
-
-@login_required
-def change_password(request):
-    if request.method == "POST":
-        old_password = request.POST.get("old_password")
-        new_password = request.POST.get("new_password")
-        confirm_password = request.POST.get("confirm_password")
-
-        if not request.user.check_password(old_password):
-            messages.error(request, "Incorrect old password.")
-        elif new_password != confirm_password:
-            messages.error(request, "New passwords do not match.")
-        else:
-            request.user.set_password(new_password)
-            request.user.save()
-            update_session_auth_hash(request, request.user)  # Prevent logout
-            messages.success(request, "Password changed successfully.")
-            return redirect("files:change_password")
-
-    return render(request, "files/change_password.html")
 
 # def register(request):
 #     CompanyData_name = "Crocin"
