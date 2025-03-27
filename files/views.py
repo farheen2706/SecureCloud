@@ -510,16 +510,15 @@ def addDataRecord(request, employee_id):
     
     # ✅ Fetch employee from Supabase instead of Django ORM
     response = supabase.table("employees").select("*").eq("id", employee_id).execute()
-
     if not response.data:
-        return render(request, "files/error.html", {"error": "Employee not found."})
+         return render(request, "files/error.html", {"error": "Employee not found."})
+
 
     employee = response.data[0]  # ✅ Employee found
     company_id = employee["company_id"]
 
     # ✅ Fetch Company Data from Supabase
     company_response = supabase.table("files_companydata").select("*").eq("id", company_id).execute()
-
     if not company_response.data:
         return render(request, "files/error.html", {"error": "Company data not found."})
 
@@ -573,7 +572,7 @@ def addDataRecord(request, employee_id):
         # ✅ Check if DataRecord exists in Supabase
         response = supabase.table("data_records").select("*").eq("record_name", new_name).execute()
 
-        if response.error:
+        if not response.data:
             messages.error(request, f"Failed to fetch data records: {response.error}")
             return render(request, "files/employee.html", {"employee": employee, "med_name": med_name})
 
