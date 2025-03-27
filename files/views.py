@@ -81,7 +81,7 @@ logger = logging.getLogger(__name__)
 
 
 def employeeLogin(request):
-    """Authenticate employee using Supabase."""
+    """Authenticate employee using Supabase and maintain a session marker."""
     
     if request.method == "POST":
         emp_email = request.POST.get("email", "").strip()
@@ -106,11 +106,22 @@ def employeeLogin(request):
 
         # ✅ Login Successful
         print(f"✅ Employee {emp_email} logged in successfully!")
-        request.session["employee_id"] = employee_data["id"]  # Store session
+        
+        # 🔥 Store Employee Session & Marker to Prevent Conflicts
+        request.session.flush()  # Clear old sessions
+        request.session["employee_id"] = employee_data["id"]
+        request.session["user_type"] = "employee"  # 🔥 Session marker
 
-        return redirect(f"/employee/{employee_data['id']}/")  # ✅ Redirect to Employee Page
+        # ✅ Use Django's login() to maintain session authentication
+        user = authenticate(username=emp_email, password=password)  # This may need customization
+        if user:
+            login(request, user)  # Log in the user
+
+        # ✅ Redirect to Employee Dashboard (Avoid Manager Login Redirection)
+        return redirect(f"/employee/{employee_data['id']}/")  
 
     return render(request, "files/employeeLogin.html")
+
 
 
 def newPassword(request):
@@ -502,55 +513,69 @@ def CompanyDataName(request):
     return render(request, "files/CompanyDataName.html")
 
 
-login_required(login_url="files:empLog")
-
-
+@login_required(login_url="files:empLog")
 def addDataRecord(request, employee_id):
     """Fetch employee from Supabase and handle data record creation/updation."""
-    
-    # ✅ Fetch employee from Supabase instead of Django ORM
+
+    # 🔍 Debugging: Check session authentication
+    print(f"🔍 DEBUG: User authenticated? {request.user.is_authenticated}")
+    print(f"🔍 DEBUG: Session data: {dict(request.session.items())}")
+
+    # ✅ Ensure only employees can access this page
+    if request.session.get("user_type") != "employee":
+        messages.error(request, "Access denied! Employees only.")
+        return redirect("files:empLog")  # Redirect unauthorized users
+
+    # ✅ Fetch employee from Supabase
     response = supabase.table("employees").select("*").eq("id", employee_id).execute()
     if not response.data:
-         return render(request, "files/error.html", {"error": "Employee not found."})
+        messages.error(request, "Employee not found.")
+        return render(request, "files/error.html", {"error": "Employee not found."})
 
-
-    employee = response.data[0]  # ✅ Employee found
+    employee = response.data[0]
     company_id = employee["company_id"]
 
     # ✅ Fetch Company Data from Supabase
     company_response = supabase.table("files_companydata").select("*").eq("id", company_id).execute()
     if not company_response.data:
+        messages.error(request, "Company data not found.")
         return render(request, "files/error.html", {"error": "Company data not found."})
 
     company_data = company_response.data[0]
 
+    # ✅ Load encryption keys from file
     file_path = "employee.txt"
     if not os.path.exists(file_path):
+        messages.error(request, "Key file missing.")
         return render(request, "files/employee.html", {"employee": employee, "error": "Key file missing"})
 
     with open(file_path, "r") as file:
         all_lines = file.readlines()
 
     if len(all_lines) < 2:
+        messages.error(request, "Invalid key file format.")
         return render(request, "files/employee.html", {"employee": employee, "error": "Invalid key file format"})
 
     # ✅ Ensure pub_key is an integer
     try:
         pub_key = int(all_lines[0].strip())
     except ValueError:
-        return render(request, "files/employee.html", {"employee": employee, "error": "Invalid public key format"})
+        messages.error(request, "Invalid public key format.")
+        return render(request, "files/employee.html", {"employee": employee, "error": "Invalid public key format."})
 
     aes_key = bytes.fromhex(all_lines[1].strip())
 
     # ✅ Ensure company_name is decrypted properly
     med_name = company_data["company_name"]
-    if isinstance(med_name, str):
-        try:
+    try:
+        if isinstance(med_name, str):
             med_name = bytes.fromhex(med_name)
             med_name = AESCipher.decrypt(aes_key, med_name)
-        except Exception as e:
-            return render(request, "files/employee.html", {"employee": employee, "error": f"Decryption error: {e}"})
+    except Exception as e:
+        messages.error(request, f"Decryption error: {e}")
+        return render(request, "files/employee.html", {"employee": employee, "error": f"Decryption error: {e}"})
 
+    # ✅ Handle form submission
     if request.method == "POST":
         date_field = datetime.now()
         name = request.POST.get("inputName", "").strip()
@@ -562,7 +587,8 @@ def addDataRecord(request, employee_id):
             quantity = int(quantity)
             cost = int(float(cost))  # Convert cost to float first, then integer
         except ValueError:
-            return render(request, "files/employee.html", {"employee": employee, "error": "Invalid quantity or cost value"})
+            messages.error(request, "Invalid quantity or cost value.")
+            return render(request, "files/employee.html", {"employee": employee, "error": "Invalid quantity or cost value."})
 
         # ✅ Encrypt name using AES
         new_name = AESCipher.encrypt(name, aes_key).hex()
@@ -572,7 +598,7 @@ def addDataRecord(request, employee_id):
         # ✅ Check if DataRecord exists in Supabase
         response = supabase.table("data_records").select("*").eq("record_name", new_name).execute()
 
-        if not response.data:
+        if response.error:
             messages.error(request, f"Failed to fetch data records: {response.error}")
             return render(request, "files/employee.html", {"employee": employee, "med_name": med_name})
 
@@ -621,10 +647,9 @@ def addDataRecord(request, employee_id):
         else:
             messages.success(request, "Data record and log entry successfully saved!")
 
-        return HttpResponseRedirect(reverse("files:addDataRecord", args=[employee["id"]]))
+        return redirect(reverse("files:addDataRecord", args=[employee["id"]]))
 
     return render(request, "files/employee.html", {"employee": employee, "med_name": med_name})
-
 
 @login_required(login_url="/managerLogin/")
 def managerDashboard(request):

@@ -49,6 +49,10 @@ STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 STATIC_URL = "/static/"
 
 # Application definition
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'  
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',  # Ensure default auth works
+]
 
 INSTALLED_APPS = [
     'files',
