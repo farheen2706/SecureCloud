@@ -32,9 +32,9 @@ LOGIN_URL = '/managerLogin/'  # ✅ Change this to match your actual login URL
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = '()i!=sop=7e5oa5f&c6@3tvdofr+xi$adkj1p4-y7mdp0*(!&m'
-SUPABASE_URL= "https://aeegjfvrzmjjbauhlhuv.supabase.co"
-SUPABASE_KEY= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlZWdqZnZyem1qamJhdWhsaHV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIxNjgwMTIsImV4cCI6MjA1Nzc0NDAxMn0.UrWX9dYtURdMaSQ13zQZnlEDWHLfbgJLbvpAxI5dVc0"
+SECRET_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Y2xyb2dwbWtmeHd2a2ZwbXJjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0MzI2NjEwMSwiZXhwIjoyMDU4ODQyMTAxfQ.0PwSRyyYJKvskEjVrIr9UsrtE8J1Fga66ZeKiBCbH-8'
+SUPABASE_URL= "https://btclrogpmkfxwvkfpmrc.supabase.co"
+SUPABASE_KEY= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Y2xyb2dwbWtmeHd2a2ZwbXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMyNjYxMDEsImV4cCI6MjA1ODg0MjEwMX0.seUTE_UQf16PAC5D3P-LRD9eiefjedn98eJ612IvZmo"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -47,6 +47,8 @@ print(f"🔍 DEBUG: ALLOWED_HOSTS = {ALLOWED_HOSTS}")
 # Static Files Handling
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 STATIC_URL = "/static/"
+LOGIN_REDIRECT_URL = "home"  # Redirect to home after login
+LOGOUT_REDIRECT_URL = "home"  # Redirect to home after logout
 
 # Application definition
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  
