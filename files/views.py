@@ -38,6 +38,13 @@ from .forms import ManagerForm, CompanyDataForm, DataRecordForm
 from server.email_info import EMAIL_HOST_USER
 from supabase import create_client, Client
 from django.conf import settings
+import traceback  # Add this import at the top if not already
+import json
+from django.http import JsonResponse
+from django.utils import timezone
+import re
+from dateutil.parser import parse as parse_date
+from django.utils.dateparse import parse_datetime
 
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
@@ -45,29 +52,57 @@ def home(request):
     return render(request, "files/home.html")  # Renders home.html
 
 
+from dateutil.parser import parse as parse_date
+
 def logs(request):
     """Fetch logs for employees under the logged-in manager from Supabase."""
+    try:
+        manager_id = request.user.id
 
-    manager_id = request.user.id
+        # ✅ Step 1: Fetch employees under this manager
+        employee_response = supabase.table("files_employee").select("id, name").eq("manager_id", manager_id).execute()
 
-    # ✅ Fetch employees managed by the logged-in manager
-    employee_response = supabase.table("employees").select("id").eq("manager_id", manager_id).execute()
+        if not employee_response.data:
+            messages.error(request, "No employees found under this manager.")
+            return render(request, "files/logs.html", {"logs": []})
 
-    if not employee_response.data:
-        messages.error(request, "No employees found under this manager.")
+        employee_ids = [emp["id"] for emp in employee_response.data]
+
+        if not employee_ids:  # Double-check before querying logs
+            messages.warning(request, "No log entries found.")
+            return render(request, "files/logs.html", {"logs": []})
+
+        # ✅ Step 2: Fetch logs for these employees
+        logs_response = (
+                supabase.table("files_log")
+                .select("*, employee:files_employee(name), data_record:files_datarecord(record_name)")
+                .order("timestamp", desc=True)
+                .execute()
+            )
+
+
+
+        if not logs_response.data:
+            messages.warning(request, "No log entries found.")
+            return render(request, "files/logs.html", {"logs": []})
+
+        valid_logs = []
+        for log in logs_response.data:
+            try:
+                # ✅ Format timestamp correctly
+                if "timestamp" in log and log["timestamp"]:
+                    log["timestamp"] = parse_datetime(log["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
+                valid_logs.append(log)
+
+            except Exception as e:
+                logger.warning(f"⚠️ Skipping malformed log entry: {e}")
+
+        return render(request, "files/logs.html", {"logs": valid_logs})
+
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in logs function: {e}", exc_info=True)
+        messages.error(request, "An unexpected error occurred while loading logs.")
         return render(request, "files/logs.html", {"logs": []})
-
-    employee_ids = [emp["id"] for emp in employee_response.data]
-
-    # ✅ Fetch logs associated with those employees
-    logs_response = supabase.table("logs").select("*").in_("employee_id", employee_ids).order("timestamp", desc=True).execute()
-
-    if not logs_response.data:
-        messages.warning(request, "No log entries found.")
-        return render(request, "files/logs.html", {"logs": []})
-
-    return render(request, "files/logs.html", {"logs": logs_response.data})
-
 
 
 def logout_view(request):
@@ -80,47 +115,43 @@ def logout_view(request):
 logger = logging.getLogger(__name__)
 
 
+from django.urls import reverse
+
 def employeeLogin(request):
     """Authenticate employee using Supabase and maintain a session marker."""
-    
+
     if request.method == "POST":
         emp_email = request.POST.get("email", "").strip()
         password = request.POST.get("password", "").strip()
 
-        # ✅ Fetch employee from Supabase
-        response = supabase.table("employees").select("*").eq("email", emp_email).execute()
-        
-        if not response.data:  # ❌ Employee not found
+        try:
+            response = supabase.table("files_employee").select("*").eq("email", emp_email).execute()
+        except Exception as e:
+            messages.error(request, "Error connecting to database.")
+            return render(request, "files/employeeLogin.html")
+
+        if not response.data:
             messages.error(request, "Employee not found.")
-            print(f"❌ Employee not found: {emp_email}")
             return render(request, "files/employeeLogin.html")
 
-        employee_data = response.data[0]  # Get first employee record
-        stored_password = employee_data["password"]  # Hashed password
+        employee_data = response.data[0]
+        stored_password = employee_data.get("password")
 
-        # ✅ Validate Password
-        if not check_password(password, stored_password):
+        if not stored_password or not check_password(password, stored_password):
             messages.error(request, "Incorrect password.")
-            print(f"❌ Incorrect password for {emp_email}")
             return render(request, "files/employeeLogin.html")
 
-        # ✅ Login Successful
-        print(f"✅ Employee {emp_email} logged in successfully!")
-        
-        # 🔥 Store Employee Session & Marker to Prevent Conflicts
-        request.session.flush()  # Clear old sessions
+        # Flush old session and start a new one
+        request.session.flush()
         request.session["employee_id"] = employee_data["id"]
-        request.session["user_type"] = "employee"  # 🔥 Session marker
+        request.session["user_type"] = "employee"
+        request.session.modified = True
 
-        # ✅ Use Django's login() to maintain session authentication
-        user = authenticate(username=emp_email, password=password)  # This may need customization
-        if user:
-            login(request, user)  # Log in the user
-
-        # ✅ Redirect to Employee Dashboard (Avoid Manager Login Redirection)
-        return redirect(f"/employee/{employee_data['id']}/")  
+        return redirect(f"/employee/{employee_data['id']}/")
 
     return render(request, "files/employeeLogin.html")
+
+
 
 
 
@@ -144,7 +175,7 @@ def managerLogin(request):
         if user is not None:
             login(request, user)
             print(f"✅ Login successful: {user.username}")  # Debugging
-            return redirect("managerDashboard")  # Redirect after login
+            return redirect("files:managerDashboard")  # Redirect after login
         else:
             print("❌ Authentication failed")  # Debugging
             messages.error(request, "Invalid username or password.")
@@ -152,7 +183,21 @@ def managerLogin(request):
 
     return render(request, "files/managerLogin.html")
 
+def managerDashboard(request):
+    manager_id = request.user
 
+    # ✅ Fetch all employees under this manager
+
+    response = supabase.table("files_employee").select("*").eq("manager_id", request.user.id).execute()
+    employees = response.data if response.data else []
+
+    # ✅ Fetch activity logs for these employees
+    response = supabase.table("files_log").select("*").order("timestamp", desc=True).execute()
+    logs = response.data if response.data else []
+
+    return render(
+        request, "files/managerDashboard.html", {"logs": logs, "employees": employees}
+    )
 from django.contrib.auth import authenticate, login
 from django.contrib import messages
 from django.shortcuts import render, redirect, reverse
@@ -229,101 +274,95 @@ from django.urls import reverse, Resolver404, get_resolver
 
 def addEmployee(request):
     """Add a new employee and send login credentials via email."""
-
-    # ✅ Ensure the manager is authenticated
+    
     if not request.user.is_authenticated:
         messages.error(request, "You must be logged in to add employees.")
         return redirect("files:manLog")
 
-    manager_user = request.user  # ✅ Get the logged-in manager
-
-    # ✅ Get the company associated with the manager
+    manager_user = request.user
     company_instance = CompanyData.objects.filter(manager=manager_user).first()
+    
     if not company_instance:
         messages.error(request, "No company assigned. Register company data first.")
         return redirect("files:managerDashboard")
 
-    company_id = company_instance.id
-    print(f"🔍 DEBUG: company_id = {company_id}, Type: {type(company_id)}")  # ✅ Ensure company_id exists
+    company_id = company_instance.id  # Ensure bigint compatibility
+    manager_id = manager_user.id  # Ensure integer compatibility
+    
+    print(f"🔐 Authenticated Manager: {manager_user.username} (ID: {manager_id})")
+    print(f"🏢 Associated Company ID: {company_id} (Type: {type(company_id)})")
 
-    # ✅ Debugging - Check Available URLs
+    # Validate URL resolution
     try:
         available_urls = [
             name for name in get_resolver().reverse_dict.keys() if isinstance(name, str)
         ]
-        print(f"🔍 Available URL Names: {available_urls}")
-
-        resolved_url = reverse("files:addEmployee")  # ✅ Try resolving the URL
-        print(f"🔍 Resolved URL for addEmployee: {resolved_url}")
+        print(f"🔗 Available URL Names: {available_urls}")
+        resolved_url = reverse("files:addEmployee")
+        print(f"📎 Resolved URL for addEmployee: {resolved_url}")
     except Resolver404 as e:
         logger.error(f"⚠️ Reverse resolution failed: {e}")
         messages.error(request, "Internal error: URL resolution failed.")
         return redirect("files:managerDashboard")
 
-    print(f"🔍 DEBUG: Logged-in manager -> {manager_user.username}")
-
     if request.method == "POST":
+        print("📨 POST request received at /addEmployee/")
+        
         emp_name = request.POST.get("inputName", "").strip()
         emp_email = request.POST.get("inputEmail3", "").strip()
 
-        # ✅ Ensure required fields are provided
         if not emp_name or not emp_email:
             messages.error(request, "Employee name and email are required.")
             return render(request, "files/addEmployee.html")
 
-        # ✅ Check if the email already exists
         if Employee.objects.filter(email=emp_email).exists():
             messages.error(request, "An employee with this email already exists.")
             return render(request, "files/addEmployee.html")
 
-        # ✅ Generate a secure random password
-        random_password = "".join(
-            random.choices(string.ascii_letters + string.digits, k=10)
-        )
-        hashed_password = make_password(
-            random_password
-        )  # 🔥 Hash password before storing
+        # Generate and hash password
+        random_password = "".join(random.choices(string.ascii_letters + string.digits, k=10))
+        hashed_password = make_password(random_password)
+
+        data = {
+            "email": emp_email,
+            "name": emp_name,
+            "role": "employee",  # Ensuring role is explicitly defined
+            "company_id": company_id,  # bigint (int8)
+            "password": hashed_password,
+            "manager_id": manager_id  # integer (int4)
+        }
+
+        print(f"📦 Inserting Data into Supabase: {data}")
 
         try:
-            # ✅ Create employee record with correct `manager` and `company`
-            data = {
-                "email": emp_email,
-                "name": emp_name,
-                "company_id": company_id,  # ✅ Use company_id directly
-                "password": hashed_password,  # ✅ Store hashed password
-                "manager_id": request.user.id
-            }
-
-            response = supabase.table("employees").insert(data).execute()
+            response = supabase.table("files_employee").insert(data).execute()
+            print(f"🧾 Supabase Response: {repr(response)}")
             
-            print("🔍 Supabase Full Response:", response)  # ✅ Debugging
+            # Validate Supabase Response
+            if response is None or not getattr(response, "data", None):
+                messages.error(request, "Failed to add employee: No response or empty data.")
+                return render(request, "files/addEmployee.html")
 
-            # ✅ Correct error handling
-            if response is None or not hasattr(response, "data") or not response.data:
-                messages.error(request, "Failed to add employee: No data returned.")
-                print("❌ Supabase Error: Response is None or data is empty.")
-            elif hasattr(response, "error"):
-                messages.error(request, f"Failed to add employee: {response.error['message']}")
-                print(f"❌ Supabase Error: {response.error}")
-            else:
-                print(f"✅ Employee Created: {emp_email}")
-                messages.success(request, f"Employee '{emp_name}' added successfully.")
+            if hasattr(response, "error") and response.error:
+                error_msg = response.error.get("message", "Unknown error")
+                messages.error(request, f"Failed to add employee: {error_msg}")
+                return render(request, "files/addEmployee.html")
 
-            # ✅ Send Login Credentials via Email
+            # Success: Send email with credentials
             subject = "Your SecureCloud Employee Login Details"
             message = f"""
-            Dear {emp_name},
+Dear {emp_name},
 
-            Your employee account has been created.
+Your employee account has been created.
 
-            ✅ Username: {emp_email}
-            ✅ Password: {random_password} (Please change it after logging in)
+✅ Username: {emp_email}
+✅ Password: {random_password} (Please change it after logging in)
 
-            🔗 Login Here: http://127.0.0.1:8000/employeeLogin/
+🔗 Login Here: http://127.0.0.1:8000/employeeLogin/
 
-            Best Regards,  
-            SecureCloud Team
-            """
+Best Regards,  
+SecureCloud Team
+"""
             recipient_list = [emp_email]
 
             try:
@@ -334,17 +373,16 @@ def addEmployee(request):
                     recipient_list,
                     fail_silently=False,
                 )
-                messages.success(request, f"Login details sent to {emp_email}.")
-                logger.info(f"✅ Email sent successfully to {emp_email}")
-            except Exception as e:
-                logger.error(f"❌ Email sending failed for {emp_email}. Error: {e}")
-                messages.error(request, "Employee added, but email could not be sent.")
+                messages.success(request, f"Employee '{emp_name}' added successfully. Login details sent to {emp_email}.")
+            except Exception as email_error:
+                logger.error(f"❌ Email sending failed for {emp_email}. Error: {email_error}")
+                messages.warning(request, "Employee added, but email could not be sent.")
 
         except Exception as e:
-            logger.error(f"❌ Error creating employee {emp_email}: {e}")
-            messages.error(request, f"Failed to add employee. Error: {e}")
+            logger.error(f"❌ Supabase insertion failed: {repr(e)}", exc_info=True)
+            messages.error(request, f"Failed to add employee. Error: {str(e)}")
+            return render(request, "files/addEmployee.html")
 
-        print("✅ DEBUG: Redirecting to addEmployee")
         return HttpResponseRedirect(reverse("files:addEmployee"))
 
     return render(request, "files/addEmployee.html")
@@ -352,85 +390,9 @@ def addEmployee(request):
 
 login_required(login_url="files:manLog")
 
+def is_hex(s):
+    return isinstance(s, str) and re.fullmatch(r"[0-9a-fA-F]+", s) is not None
 
-def display(request):
-    manager_file_path = "manager.txt"
-
-    if not os.path.exists(manager_file_path):
-        messages.error(request, "Error: manager.txt file is missing.")
-        return render(request, "files/display.html", {"values": []})
-
-    values = []  # ✅ Ensure 'values' is always initialized
-
-    try:
-        with open(manager_file_path, "r") as file:
-            all_lines = file.readlines()
-
-        if len(all_lines) < 4:
-            messages.error(request, "Error: manager.txt file is incomplete.")
-            return render(request, "files/display.html", {"values": []})
-
-        pub = int(all_lines[0].strip())
-        priv1 = int(all_lines[1].strip())
-        priv2 = int(all_lines[2].strip())
-        aes = bytes.fromhex(all_lines[3].strip())
-
-        # ✅ Ensure the manager exists
-        user = request.user  # Directly using request.user
-
-        # ✅ Ensure CompanyData exists for the manager
-        try:
-            med = CompanyData.objects.get(manager=user)
-        except CompanyData.DoesNotExist:
-            messages.error(request, "No records found for this manager.")
-            return render(request, "files/display.html", {"values": []})
-
-        # ✅ Retrieve DataRecords associated with this company from Supabase
-        response = supabase.table("data_records").select("*").eq("key", med.id).execute()
-        comp = response.data if response.data else []
-
-        # ✅ Debugging: Print DataRecords
-        print("DEBUG - Retrieved DataRecords:", comp)
-
-        if not comp:  # ✅ Fix: Correct way to check if list is empty
-            messages.error(request, "No records found in the database.")
-            return render(request, "files/display.html", {"values": []})
-
-        ctr = 1
-        for item in comp:
-            try:
-                record_name = bytes.fromhex(item["record_name"])  # ✅ Fix: Use dict key access
-                name = AESCipher.decrypt(aes, record_name)
-                quantity = paillier.decrypt(priv1, priv2, pub, int(item["record_content"]))
-                cost = paillier.decrypt(priv1, priv2, pub, int(item["date_added"]))
-
-                values.append(
-                    {
-                        "ctr": ctr,
-                        "name": name,
-                        "quantity": quantity,
-                        "cost": cost,
-                    }
-                )
-                ctr += 1
-            except Exception as e:
-                logger.error(f"Error processing DataRecord {item.get('id', 'unknown')}: {e}")
-
-        return render(
-            request,
-            "files/display.html",
-            {"values": values, "med_name": med.company_name},
-        )
-
-    except Exception as e:
-        logger.error(f"Unexpected error in display function: {e}")
-        messages.error(request, "An unexpected error occurred.")
-        return render(
-            request,
-            "files/display.html",
-            {"values": values, "med_name": getattr(med, 'company_name', 'Unknown')},  # ✅ Prevent crash if 'med' is missing
-        )
-        
 def display(request):
     manager_file_path = "manager.txt"
 
@@ -451,10 +413,8 @@ def display(request):
         priv2 = int(all_lines[2].strip())
         aes = bytes.fromhex(all_lines[3].strip())
 
-        # Ensure the manager exists
-        user = request.user  # Django's built-in user authentication
+        user = request.user
 
-        # Ensure CompanyData exists for the manager
         try:
             med = CompanyData.objects.get(manager=user)
             logger.debug(f"🔍 DEBUG: Found CompanyData -> ID: {med.id}, Name: {med.company_name}")
@@ -462,10 +422,8 @@ def display(request):
             messages.error(request, "No records found for this manager.")
             return render(request, "files/display.html", {"values": []})
 
-        # ✅ Retrieve DataRecords using the correct column name `key_id`
-        response = supabase.table("data_records").select("*").eq("key_id", med.id).execute()
+        response = supabase.table("files_datarecord").select("*").eq("key_id", med.id).execute()
 
-        # ✅ Ensure response contains data
         if not response.data:
             logger.debug("DEBUG - Retrieved 0 DataRecords: []")
             messages.error(request, "No records found in the database.")
@@ -476,10 +434,22 @@ def display(request):
 
         for item in response.data:
             try:
-                record_name = bytes.fromhex(item["record_name"])
+                # Safely decode hex and decrypt
+                record_name_hex = item.get("record_name", "")
+                record_content_raw = item.get("record_content", "")
+                date_added_raw = item.get("date_added", "")
+
+                if not is_hex(record_name_hex):
+                    raise ValueError("record_name is not valid hex")
+
+                record_name = bytes.fromhex(record_name_hex)
                 name = AESCipher.decrypt(aes, record_name)
-                quantity = paillier.decrypt(priv1, priv2, pub, int(item["record_content"]))
-                cost = paillier.decrypt(priv1, priv2, pub, int(item["date_added"]))
+
+                quantity = int(record_content_raw)
+                cost = int(date_added_raw)
+
+                quantity = paillier.decrypt(priv1, priv2, pub, quantity)
+                cost = paillier.decrypt(priv1, priv2, pub, cost)
 
                 values.append(
                     {
@@ -490,8 +460,9 @@ def display(request):
                     }
                 )
                 ctr += 1
+
             except Exception as e:
-                logger.error(f"Error processing DataRecord {item['id']}: {e}")
+                logger.warning(f"⚠️ Skipping malformed DataRecord ID {item.get('id', 'unknown')}: {e}")
 
         return render(
             request,
@@ -513,162 +484,63 @@ def CompanyDataName(request):
     return render(request, "files/CompanyDataName.html")
 
 
-@login_required(login_url="files:empLog")
+
 def addDataRecord(request, employee_id):
-    """Fetch employee from Supabase and handle data record creation/updation."""
+    if request.method == "GET":
+        employee = get_object_or_404(Employee, id=employee_id)
+        return render(request, "files/employee.html", {"employee": employee})
 
-    # 🔍 Debugging: Check session authentication
-    print(f"🔍 DEBUG: User authenticated? {request.user.is_authenticated}")
-    print(f"🔍 DEBUG: Session data: {dict(request.session.items())}")
+    elif request.method == "POST":
+        employee = get_object_or_404(Employee, id=employee_id)
 
-    # ✅ Ensure only employees can access this page
-    if request.session.get("user_type") != "employee":
-        messages.error(request, "Access denied! Employees only.")
-        return redirect("files:empLog")  # Redirect unauthorized users
+        input_name = request.POST.get("inputName")
+        quantity = request.POST.get("inputQuantity")
+        cost = request.POST.get("inputCost")
 
-    # ✅ Fetch employee from Supabase
-    response = supabase.table("employees").select("*").eq("id", employee_id).execute()
-    if not response.data:
-        messages.error(request, "Employee not found.")
-        return render(request, "files/error.html", {"error": "Employee not found."})
+        if not all([input_name, quantity, cost]):
+            return JsonResponse({"error": "Missing fields"}, status=400)
 
-    employee = response.data[0]
-    company_id = employee["company_id"]
-
-    # ✅ Fetch Company Data from Supabase
-    company_response = supabase.table("files_companydata").select("*").eq("id", company_id).execute()
-    if not company_response.data:
-        messages.error(request, "Company data not found.")
-        return render(request, "files/error.html", {"error": "Company data not found."})
-
-    company_data = company_response.data[0]
-
-    # ✅ Load encryption keys from file
-    file_path = "employee.txt"
-    if not os.path.exists(file_path):
-        messages.error(request, "Key file missing.")
-        return render(request, "files/employee.html", {"employee": employee, "error": "Key file missing"})
-
-    with open(file_path, "r") as file:
-        all_lines = file.readlines()
-
-    if len(all_lines) < 2:
-        messages.error(request, "Invalid key file format.")
-        return render(request, "files/employee.html", {"employee": employee, "error": "Invalid key file format"})
-
-    # ✅ Ensure pub_key is an integer
-    try:
-        pub_key = int(all_lines[0].strip())
-    except ValueError:
-        messages.error(request, "Invalid public key format.")
-        return render(request, "files/employee.html", {"employee": employee, "error": "Invalid public key format."})
-
-    aes_key = bytes.fromhex(all_lines[1].strip())
-
-    # ✅ Ensure company_name is decrypted properly
-    med_name = company_data["company_name"]
-    try:
-        if isinstance(med_name, str):
-            med_name = bytes.fromhex(med_name)
-            med_name = AESCipher.decrypt(aes_key, med_name)
-    except Exception as e:
-        messages.error(request, f"Decryption error: {e}")
-        return render(request, "files/employee.html", {"employee": employee, "error": f"Decryption error: {e}"})
-
-    # ✅ Handle form submission
-    if request.method == "POST":
-        date_field = datetime.now()
-        name = request.POST.get("inputName", "").strip()
-        quantity = request.POST.get("inputQuantity", "0").strip()
-        cost = request.POST.get("inputCost", "0").strip()
-
-        # ✅ Ensure proper type conversions
         try:
+            # Get the employee's company
+            company_data = employee.company
+
+            # Convert quantity and cost
             quantity = int(quantity)
-            cost = int(float(cost))  # Convert cost to float first, then integer
-        except ValueError:
-            messages.error(request, "Invalid quantity or cost value.")
-            return render(request, "files/employee.html", {"employee": employee, "error": "Invalid quantity or cost value."})
+            cost = float(cost)
 
-        # ✅ Encrypt name using AES
-        new_name = AESCipher.encrypt(name, aes_key).hex()
-        new_quantity = paillier.encrypt(pub_key, quantity)
-        new_cost = paillier.encrypt(pub_key, cost)
-
-        # ✅ Check if DataRecord exists in Supabase
-        response = supabase.table("data_records").select("*").eq("record_name", new_name).execute()
-
-        if response.error:
-            messages.error(request, f"Failed to fetch data records: {response.error}")
-            return render(request, "files/employee.html", {"employee": employee, "med_name": med_name})
-
-        existing_records = response.data
-
-        if existing_records:
-            # ✅ Update existing record in Supabase
-            existing_record = existing_records[0]
-            existing_quantity = int(existing_record["record_content"])
-            updated_quantity = paillier.e_add(pub_key, existing_quantity, new_quantity)
-
-            update_response = supabase.table("data_records").update(
-                {"record_content": str(updated_quantity)}
-            ).eq("record_name", new_name).execute()
-
-            if update_response.error:
-                messages.error(request, f"Failed to update data record: {update_response.error}")
-                return render(request, "files/employee.html", {"employee": employee, "med_name": med_name})
-
-        else:
-            # ✅ Insert new DataRecord into Supabase
+            # Create a data record with encryption placeholders
             data = {
-                "key_id": company_data["id"],
-                "record_name": new_name,
-                "record_content": str(new_quantity),
-                "date_added": str(date_field),
+                "key_id": company_data.id,
+                "record_name": input_name,
+                "record_content": "Encrypted content placeholder",
+                "date_added": timezone.now().isoformat(),
+                "quantity": quantity,
+                "cost": cost,
             }
-            insert_response = supabase.table("data_records").insert(data).execute()
 
-            if insert_response.error:
-                messages.error(request, f"Failed to add data record: {insert_response.error}")
-                return render(request, "files/employee.html", {"employee": employee, "med_name": med_name})
+            # Insert into files_datarecord
+            supabase.table("files_datarecord").insert(data).execute()
 
-        # ✅ Insert Log Entry into Supabase
-        log_data = {
-            "employee_id": employee["id"],
-            "timestamp": str(date_field),
-            "data_record_name": new_name,
-            "quantity": quantity,
-            "cost": cost
-        }
-        log_response = supabase.table("logs").insert(log_data).execute()
+            response = supabase.table("files_datarecord").insert(data).execute()
+            data_record_id = response.data[0]["id"]  # Extract the inserted record ID
 
-        if log_response.error:
-            messages.error(request, f"Failed to add log entry: {log_response.error}")
-        else:
-            messages.success(request, "Data record and log entry successfully saved!")
-
-        return redirect(reverse("files:addDataRecord", args=[employee["id"]]))
-
-    return render(request, "files/employee.html", {"employee": employee, "med_name": med_name})
-
-@login_required(login_url="/managerLogin/")
-def managerDashboard(request):
-    manager_id = request.user
-
-    # ✅ Fetch all employees under this manager
-
-    response = supabase.table("employees").select("*").eq("manager_id", request.user.id).execute()
-    employees = response.data if response.data else []
-
-    # ✅ Fetch activity logs for these employees
-    response = supabase.table("logs").select("*").order("timestamp", desc=True).execute()
-    logs = response.data if response.data else []
-
-    return render(
-        request, "files/managerDashboard.html", {"logs": logs, "employees": employees}
-    )
+            # Log the action with the correct data_record_id
+            log_data = {
+                "employee_id": employee_id,
+                "data_record_id": data_record_id,  # Store the ID
+                "action": f"Added data record: {input_name}",
+                "quantity": int(quantity),
+                "cost": float(cost),
+            }
+            supabase.table("files_log").insert(log_data).execute()
 
 
+            return JsonResponse({"message": "Data record added successfully"}, status=201)
+
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"error": "Only GET and POST methods are allowed"}, status=405)
 # def register(request):
 #     CompanyData_name = "Crocin"
 #     file = open('manager.txt')

@@ -30,16 +30,28 @@
                         {% for log in logs %}
                         <tr>
                             <td>{{ log.timestamp }}</td>
-                            <td>{{ log.employee.name }}</td>
-                            <td>{{ log.data_record.record_name }}</td>
-                            <td>{{ .quantlogity }}</td>
-                            <td>${{ log.cost }}</td>
+                            <td>
+                                {% if log.employee %} 
+                                    {{ log.employee.name }} 
+                                {% else %} 
+                                    Unknown 
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if log.data_record and log.data_record.record_name %}
+                                    {{ log.data_record.record_name }} 
+                                {% else %} 
+                                    N/A 
+                                {% endif %}
+                            </td>
+                            <td>{{ log.quantity }}</td>
+                            <td>${{ log.cost|default:"0" }}</td>
                         </tr>
                         {% empty %}
                         <tr>
                             <td colspan="5" class="text-muted">No logs available.</td>
                         </tr>
-                        {% endfor %}
+                        {% endfor %}  <!-- ✅ Closing for loop here -->
                     </tbody>
                 </table>
             </div>
@@ -51,5 +63,4 @@
 </body>
 </html>
 
-
-{% endblock content %}
+{% endblock content %} <!-- ✅ Now correctly placed -->

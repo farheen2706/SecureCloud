@@ -13,6 +13,14 @@ https://docs.djangoproject.com/en/2.2/ref/settings/
 import os
 from .email_info import EMAIL_BACKEND, EMAIL_HOST, EMAIL_PORT, EMAIL_USE_TLS, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD
 from supabase import create_client, Client
+import dj_database_url
+from dotenv import load_dotenv
+import environ
+from pathlib import Path
+
+
+env = environ.Env()
+environ.Env.read_env()
 
 EMAIL_USE_TLS= EMAIL_USE_TLS
 EMAIL_HOST = EMAIL_HOST
@@ -27,7 +35,7 @@ DEBUG = False
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 LOGIN_URL = '/managerLogin/'  # ✅ Change this to match your actual login URL
-
+load_dotenv()
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
 
@@ -49,7 +57,16 @@ STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 STATIC_URL = "/static/"
 LOGIN_REDIRECT_URL = "home"  # Redirect to home after login
 LOGOUT_REDIRECT_URL = "home"  # Redirect to home after logout
+BASE_DIR = Path(__file__).resolve().parent.parent
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
+SESSION_COOKIE_AGE = 86400  # 1 day
+SESSION_SAVE_EVERY_REQUEST = True
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+SESSION_COOKIE_SECURE = False  # Only for development if not using HTTPS
 
+DATABASES = {
+    'default': dj_database_url.config(default=os.getenv("DATABASE_URL"))
+}
 # Application definition
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  
 AUTHENTICATION_BACKENDS = [
@@ -107,10 +124,17 @@ WSGI_APPLICATION = 'server.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('DB_USER'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': os.getenv('DB_PORT'),
     }
 }
+
+# If DATABASE_URL is set, override the default configuration
+
 
 
 # Password validation
