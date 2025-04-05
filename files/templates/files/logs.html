@@ -1,66 +1,38 @@
 {% extends "files/base_manager.html" %}
 
 {% block content %}
+<div class="container mt-4">
+    <h2 class="text-center mb-4">📜 Employee Activity Logs</h2>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Employee Activity Logs</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-</head>
-<body>
-    <div class="container mt-4">
-        <h2 class="text-center mb-4">📜 Employee Activity Logs</h2>
-
-        <div class="card shadow-lg">
-            <div class="card-body">
-                <table class="table table-hover table-bordered text-center">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>📅 Timestamp</th>
-                            <th>👤 Employee</th>
-                            <th>📂 Data Record</th>
-                            <th>📦 Quantity</th>
-                            <th>💰 Cost</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for log in logs %}
-                        <tr>
-                            <td>{{ log.timestamp }}</td>
-                            <td>
-                                {% if log.employee %} 
-                                    {{ log.employee.name }} 
-                                {% else %} 
-                                    Unknown 
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if log.data_record and log.data_record.record_name %}
-                                    {{ log.data_record.record_name }} 
-                                {% else %} 
-                                    N/A 
-                                {% endif %}
-                            </td>
-                            <td>{{ log.quantity }}</td>
-                            <td>${{ log.cost|default:"0" }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="5" class="text-muted">No logs available.</td>
-                        </tr>
-                        {% endfor %}  <!-- ✅ Closing for loop here -->
-                    </tbody>
-                </table>
-            </div>
+    <div class="card shadow-lg">
+        <div class="card-body">
+            <table class="table table-hover table-bordered text-center">
+                <thead class="table-dark">
+                    <tr>
+                        <th>📅 Timestamp</th>
+                        <th>👤 Employee</th>
+                        <th>📂 Data Record</th>
+                        <th>📦 Folders</th>
+                        <th>💰 Sub-Folders</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr>
+                        <td>{{ log.timestamp }}</td>
+                        <td>{{ log.employee_name }}</td>
+                        <td>{{ log.record_name }}</td> <!-- AES encrypted -->
+                        <td>{{ log.quantity_enc }}</td>     <!-- Paillier encrypted -->
+                        <td>{{ log.cost_enc }}</td>         <!-- Paillier encrypted -->
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-muted">No logs available.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
-
-{% endblock content %} <!-- ✅ Now correctly placed -->
+</div>
+{% endblock content %}

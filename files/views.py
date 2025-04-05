@@ -55,54 +55,106 @@ def home(request):
 from dateutil.parser import parse as parse_date
 
 def logs(request):
-    """Fetch logs for employees under the logged-in manager from Supabase."""
-    try:
-        manager_id = request.user.id
+    """Fetch logs for employees under the logged-in manager, decrypt record name, and show encrypted/decrypted values."""
 
-        # ✅ Step 1: Fetch employees under this manager
-        employee_response = supabase.table("files_employee").select("id, name").eq("manager_id", manager_id).execute()
+    def is_valid_hex(s):
+        if not isinstance(s, str) or len(s) % 2 != 0:
+            return False
+        try:
+            bytes.fromhex(s)
+            return True
+        except ValueError:
+            return False
 
-        if not employee_response.data:
-            messages.error(request, "No employees found under this manager.")
-            return render(request, "files/logs.html", {"logs": []})
-
-        employee_ids = [emp["id"] for emp in employee_response.data]
-
-        if not employee_ids:  # Double-check before querying logs
-            messages.warning(request, "No log entries found.")
-            return render(request, "files/logs.html", {"logs": []})
-
-        # ✅ Step 2: Fetch logs for these employees
-        logs_response = (
-                supabase.table("files_log")
-                .select("*, employee:files_employee(name), data_record:files_datarecord(record_name)")
-                .order("timestamp", desc=True)
-                .execute()
-            )
-
-
-
-        if not logs_response.data:
-            messages.warning(request, "No log entries found.")
-            return render(request, "files/logs.html", {"logs": []})
-
-        valid_logs = []
-        for log in logs_response.data:
-            try:
-                # ✅ Format timestamp correctly
-                if "timestamp" in log and log["timestamp"]:
-                    log["timestamp"] = parse_datetime(log["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
-                valid_logs.append(log)
-
-            except Exception as e:
-                logger.warning(f"⚠️ Skipping malformed log entry: {e}")
-
-        return render(request, "files/logs.html", {"logs": valid_logs})
-
-    except Exception as e:
-        logger.error(f"❌ Unexpected error in logs function: {e}", exc_info=True)
-        messages.error(request, "An unexpected error occurred while loading logs.")
+    key_file = "manager.txt"
+    if not os.path.exists(key_file):
+        messages.error(request, "Encryption key file missing.")
         return render(request, "files/logs.html", {"logs": []})
+
+    with open(key_file, "r") as f:
+        lines = [line.strip() for line in f.readlines()]
+    pub, priv1, priv2 = map(int, lines[:3])
+    aes_key = bytes.fromhex(lines[3])  # AES key
+
+    manager_id = request.user.id
+    emp_resp = supabase.table("files_employee")\
+        .select("id")\
+        .eq("manager_id", manager_id)\
+        .execute()
+    if not emp_resp.data:
+        messages.error(request, "No employees found under this manager.")
+        return render(request, "files/logs.html", {"logs": []})
+    emp_ids = [e["id"] for e in emp_resp.data]
+
+    logs_resp = supabase.table("files_log")\
+        .select("*, data_record:files_datarecord(record_name), employee:files_employee(name)")\
+        .in_("employee_id", emp_ids)\
+        .order("timestamp", desc=True)\
+        .execute()
+    if not logs_resp.data:
+        messages.warning(request, "No log entries found.")
+        return render(request, "files/logs.html", {"logs": []})
+
+    decrypted_logs = []
+    for entry in logs_resp.data:
+        try:
+            print("\n📄 Processing Log Entry...")
+
+            record_obj = entry.get("data_record") or {}
+            emp_obj = entry.get("employee") or {}
+
+            enc_hex = record_obj.get("record_name", "")
+            if enc_hex and is_valid_hex(enc_hex):
+                record_name = AESCipher.decrypt(aes_key, bytes.fromhex(enc_hex))
+                print(f"  [AES] Encrypted Record Name (hex): {enc_hex}")
+                print(f"  [AES] → Decrypted Record Name: {record_name}")
+            else:
+                print(f"  ⚠️ Invalid AES hex: {enc_hex}")
+                continue
+
+            qty_cipher = entry.get("quantity")
+            cost_cipher = entry.get("cost")
+
+            if qty_cipher is not None:
+                quantity = paillier.decrypt(priv1, priv2, pub, int(qty_cipher))
+                print(f"  [Paillier] Encrypted Quantity: {qty_cipher}")
+                print(f"  [Paillier] → Decrypted Quantity: {quantity}")
+            else:
+                qty_cipher = "N/A"
+                quantity = "N/A"
+
+            if cost_cipher is not None:
+                cost = paillier.decrypt(priv1, priv2, pub, int(cost_cipher))
+                print(f"  [Paillier] Encrypted Cost: {cost_cipher}")
+                print(f"  [Paillier] → Decrypted Cost: {cost}")
+            else:
+                cost_cipher = "N/A"
+                cost = "N/A"
+
+            ts = entry.get("timestamp")
+            timestamp = parse_datetime(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else "N/A"
+
+            decrypted_logs.append({
+                "timestamp": timestamp,
+                "employee_name": emp_obj.get("name", "Unknown"),
+                "record_name": record_name,
+                "record_name_enc": enc_hex,
+                "quantity_enc": qty_cipher,
+                "quantity_dec": quantity,
+                "cost_enc": cost_cipher,
+                "cost_dec": cost,
+            })
+
+        except Exception as e:
+            print(f"⚠️ Error processing log entry: {e}")
+            continue
+
+    return render(request, "files/logs.html", {"logs": decrypted_logs})
+
+
+
+
+
 
 
 def logout_view(request):
@@ -486,61 +538,108 @@ def CompanyDataName(request):
 
 
 def addDataRecord(request, employee_id):
-    if request.method == "GET":
-        employee = get_object_or_404(Employee, id=employee_id)
+    """Encrypt inputs with Paillier/AES, store in Supabase, and log the action."""
+
+    # Only employees
+    if request.session.get("user_type") != "employee":
+        messages.error(request, "Access denied! Employees only.")
+        return redirect("files:empLog")
+
+    # Fetch employee & company
+    employee = get_object_or_404(Employee, id=employee_id)
+    company = employee.company
+
+    # Load keys
+    key_file = "employee.txt"
+    if not os.path.exists(key_file):
+        messages.error(request, "Encryption key file missing.")
         return render(request, "files/employee.html", {"employee": employee})
 
-    elif request.method == "POST":
-        employee = get_object_or_404(Employee, id=employee_id)
+    lines = open(key_file).read().splitlines()
+    if len(lines) < 2:
+        messages.error(request, "Invalid encryption key file format.")
+        return render(request, "files/employee.html", {"employee": employee})
 
-        input_name = request.POST.get("inputName")
-        quantity = request.POST.get("inputQuantity")
-        cost = request.POST.get("inputCost")
+    pub_key = int(lines[0])
+    aes_key = bytes.fromhex(lines[1])
 
-        if not all([input_name, quantity, cost]):
-            return JsonResponse({"error": "Missing fields"}, status=400)
+    if request.method == "GET":
+        return render(request, "files/employee.html", {"employee": employee})
 
-        try:
-            # Get the employee's company
-            company_data = employee.company
+    # POST: process form
+    name = request.POST.get("inputName", "").strip()
+    qty_raw = request.POST.get("inputQuantity", "").strip()
+    cost_raw = request.POST.get("inputCost", "").strip()
 
-            # Convert quantity and cost
-            quantity = int(quantity)
-            cost = float(cost)
+    if not all([name, qty_raw, cost_raw]):
+        return JsonResponse({"error": "Missing fields"}, status=400)
 
-            # Create a data record with encryption placeholders
-            data = {
-                "key_id": company_data.id,
-                "record_name": input_name,
-                "record_content": "Encrypted content placeholder",
-                "date_added": timezone.now().isoformat(),
+    try:
+        quantity = int(qty_raw)
+        cost = float(cost_raw)
+    except ValueError:
+        return JsonResponse({"error": "Quantity and cost must be numeric"}, status=400)
+
+    # --- LIVE ENCRYPTION LOGGING ---
+    print(f"🔐 [AES] Encrypting record name: {name}")
+    encrypted_name = AESCipher.encrypt(name, aes_key).hex()
+    print(f"   → Encrypted name (hex): {encrypted_name}")
+
+    print(f"🔢 [Paillier] Encrypting quantity: {quantity}")
+    encrypted_qty = paillier.encrypt(pub_key, quantity)
+    print(f"   → Encrypted quantity (int): {encrypted_qty}")
+
+    print(f"💲 [Paillier] Encrypting cost: {cost}")
+    encrypted_cost = paillier.encrypt(pub_key, int(cost))
+    print(f"   → Encrypted cost (int): {encrypted_cost}")
+    # --- END LIVE LOGGING ---
+
+    timestamp = now().isoformat()
+
+    try:
+        # Check existing
+        rec_check = supabase.table("files_datarecord")\
+            .select("*").eq("record_name", encrypted_name).execute()
+        existing = rec_check.data
+
+        if existing:
+            print(f"🔄 Found existing record ID {existing[0]['id']}, updating...")
+            existing_qty = int(existing[0]["record_content"])
+            new_qty = paillier.e_add(pub_key, existing_qty, encrypted_qty)
+            print(f"   → Updated quantity ciphertext: {new_qty}")
+            supabase.table("files_datarecord")\
+                .update({"record_content": str(new_qty)})\
+                .eq("record_name", encrypted_name).execute()
+            data_record_id = existing[0]["id"]
+        else:
+            print("➕ Inserting new encrypted record...")
+            resp = supabase.table("files_datarecord").insert({
+                "key_id": company.id,
+                "record_name": encrypted_name,
+                "record_content": str(encrypted_qty),
+                "date_added": timestamp,
                 "quantity": quantity,
-                "cost": cost,
-            }
+                "cost": cost
+            }).execute()
+            data_record_id = resp.data[0]["id"]
+            print(f"   → Inserted record ID: {data_record_id}")
 
-            # Insert into files_datarecord
-            supabase.table("files_datarecord").insert(data).execute()
+        # Log the operation
+        print(f"📝 Logging operation for data_record_id={data_record_id}")
+        supabase.table("files_log").insert({
+            "employee_id": employee.id,
+            "data_record_id": data_record_id,
+            "timestamp": timestamp,
+            "quantity": quantity,
+            "cost": cost,
+            "action": f"Encrypted record '{name}' stored"
+        }).execute()
 
-            response = supabase.table("files_datarecord").insert(data).execute()
-            data_record_id = response.data[0]["id"]  # Extract the inserted record ID
+        return JsonResponse({"message": "Data record and log saved!"}, status=201)
 
-            # Log the action with the correct data_record_id
-            log_data = {
-                "employee_id": employee_id,
-                "data_record_id": data_record_id,  # Store the ID
-                "action": f"Added data record: {input_name}",
-                "quantity": int(quantity),
-                "cost": float(cost),
-            }
-            supabase.table("files_log").insert(log_data).execute()
-
-
-            return JsonResponse({"message": "Data record added successfully"}, status=201)
-
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
-
-    return JsonResponse({"error": "Only GET and POST methods are allowed"}, status=405)
+    except Exception as e:
+        print(f"❌ Error during encryption/storage: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
 # def register(request):
 #     CompanyData_name = "Crocin"
 #     file = open('manager.txt')
