@@ -553,7 +553,7 @@ def addDataRecord(request, employee_id):
     company = employee.company
 
     # Load keys
-    key_file = "employee.txt"
+    key_file = os.path.join(settings.BASE_DIR, "employee.txt")
     if not os.path.exists(key_file):
         messages.error(request, "Encryption key file missing.")
         return render(request, "files/employee.html", {"employee": employee})
