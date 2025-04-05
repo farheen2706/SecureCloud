@@ -644,6 +644,7 @@ def addDataRecord(request, employee_id):
     except Exception as e:
         print(f"❌ Error during encryption/storage: {e}")
         return JsonResponse({"error": str(e)}, status=500)
+    
 # def register(request):
 #     CompanyData_name = "Crocin"
 #     file = open('manager.txt')
