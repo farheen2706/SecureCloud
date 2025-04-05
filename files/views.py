@@ -57,6 +57,8 @@ from dateutil.parser import parse as parse_date
 def logs(request):
     """Fetch logs for employees under the logged-in manager, decrypt record name, and show encrypted/decrypted values."""
 
+    import os
+
     def is_valid_hex(s):
         if not isinstance(s, str) or len(s) % 2 != 0:
             return False
@@ -66,15 +68,15 @@ def logs(request):
         except ValueError:
             return False
 
-    key_file = "manager.txt"
-    if not os.path.exists(key_file):
-        messages.error(request, "Encryption key file missing.")
+    # 🔐 Load encryption keys from environment variables
+    try:
+        pub = int(os.environ.get("PAILLIER_PUB"))
+        priv1 = int(os.environ.get("PAILLIER_PRIV1"))
+        priv2 = int(os.environ.get("PAILLIER_PRIV2"))
+        aes_key = bytes.fromhex(os.environ.get("AES_KEY"))
+    except (TypeError, ValueError) as e:
+        messages.error(request, f"Missing or invalid encryption environment variables: {e}")
         return render(request, "files/logs.html", {"logs": []})
-
-    with open(key_file, "r") as f:
-        lines = [line.strip() for line in f.readlines()]
-    pub, priv1, priv2 = map(int, lines[:3])
-    aes_key = bytes.fromhex(lines[3])  # AES key
 
     manager_id = request.user.id
     emp_resp = supabase.table("files_employee")\
@@ -150,6 +152,7 @@ def logs(request):
             continue
 
     return render(request, "files/logs.html", {"logs": decrypted_logs})
+
 
 
 
