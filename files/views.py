@@ -68,6 +68,7 @@ def logs(request):
         except ValueError:
             return False
 
+    # 🔐 Load encryption keys from environment variables
     try:
         pub = int(os.environ.get("PAILLIER_PUB"))
         priv1 = int(os.environ.get("PAILLIER_PRIV1"))
@@ -82,11 +83,9 @@ def logs(request):
         .select("id")\
         .eq("manager_id", manager_id)\
         .execute()
-
     if not emp_resp.data:
         messages.error(request, "No employees found under this manager.")
         return render(request, "files/logs.html", {"logs": []})
-    
     emp_ids = [e["id"] for e in emp_resp.data]
 
     logs_resp = supabase.table("files_log")\
@@ -94,7 +93,6 @@ def logs(request):
         .in_("employee_id", emp_ids)\
         .order("timestamp", desc=True)\
         .execute()
-
     if not logs_resp.data:
         messages.warning(request, "No log entries found.")
         return render(request, "files/logs.html", {"logs": []})
@@ -154,6 +152,12 @@ def logs(request):
             continue
 
     return render(request, "files/logs.html", {"logs": decrypted_logs})
+
+
+
+
+
+
 
 
 def logout_view(request):
@@ -539,14 +543,17 @@ def CompanyDataName(request):
 def addDataRecord(request, employee_id):
     """Encrypt inputs with Paillier/AES, store in Supabase, and log the action."""
 
+    # Only employees
     if request.session.get("user_type") != "employee":
         messages.error(request, "Access denied! Employees only.")
         return redirect("files:empLog")
 
+    # Fetch employee & company
     employee = get_object_or_404(Employee, id=employee_id)
     company = employee.company
 
-    key_file = os.path.join(settings.BASE_DIR, "employee.txt")
+    # Load keys
+    key_file = "employee.txt"
     if not os.path.exists(key_file):
         messages.error(request, "Encryption key file missing.")
         return render(request, "files/employee.html", {"employee": employee})
@@ -562,6 +569,7 @@ def addDataRecord(request, employee_id):
     if request.method == "GET":
         return render(request, "files/employee.html", {"employee": employee})
 
+    # POST: process form
     name = request.POST.get("inputName", "").strip()
     qty_raw = request.POST.get("inputQuantity", "").strip()
     cost_raw = request.POST.get("inputCost", "").strip()
@@ -575,7 +583,7 @@ def addDataRecord(request, employee_id):
     except ValueError:
         return JsonResponse({"error": "Quantity and cost must be numeric"}, status=400)
 
-    # --- ENCRYPTION ---
+    # --- LIVE ENCRYPTION LOGGING ---
     print(f"🔐 [AES] Encrypting record name: {name}")
     encrypted_name = AESCipher.encrypt(name, aes_key).hex()
     print(f"   → Encrypted name (hex): {encrypted_name}")
@@ -587,10 +595,12 @@ def addDataRecord(request, employee_id):
     print(f"💲 [Paillier] Encrypting cost: {cost}")
     encrypted_cost = paillier.encrypt(pub_key, int(cost))
     print(f"   → Encrypted cost (int): {encrypted_cost}")
+    # --- END LIVE LOGGING ---
 
     timestamp = now().isoformat()
 
     try:
+        # Check existing
         rec_check = supabase.table("files_datarecord")\
             .select("*").eq("record_name", encrypted_name).execute()
         existing = rec_check.data
@@ -617,14 +627,14 @@ def addDataRecord(request, employee_id):
             data_record_id = resp.data[0]["id"]
             print(f"   → Inserted record ID: {data_record_id}")
 
-        # 📝 Log the **encrypted** quantity and cost
+        # Log the operation
         print(f"📝 Logging operation for data_record_id={data_record_id}")
         supabase.table("files_log").insert({
             "employee_id": employee.id,
             "data_record_id": data_record_id,
             "timestamp": timestamp,
-            "quantity": str(encrypted_qty),  # ✅ storing encrypted
-            "cost": str(encrypted_cost),    # ✅ storing encrypted
+            "quantity": quantity,
+            "cost": cost,
             "action": f"Encrypted record '{name}' stored"
         }).execute()
 
@@ -633,7 +643,6 @@ def addDataRecord(request, employee_id):
     except Exception as e:
         print(f"❌ Error during encryption/storage: {e}")
         return JsonResponse({"error": str(e)}, status=500)
-
 # def register(request):
 #     CompanyData_name = "Crocin"
 #     file = open('manager.txt')
