@@ -83,23 +83,16 @@ def logs(request):
         .select("id")\
         .eq("manager_id", manager_id)\
         .execute()
-
     if not emp_resp.data:
         messages.error(request, "No employees found under this manager.")
         return render(request, "files/logs.html", {"logs": []})
-
-    # ✅ Filter out None IDs
-    emp_ids = [e["id"] for e in emp_resp.data if e.get("id") is not None]
-    if not emp_ids:
-        messages.error(request, "No valid employee IDs found.")
-        return render(request, "files/logs.html", {"logs": []})
+    emp_ids = [e["id"] for e in emp_resp.data]
 
     logs_resp = supabase.table("files_log")\
         .select("*, data_record:files_datarecord(record_name), employee:files_employee(name)")\
         .in_("employee_id", emp_ids)\
         .order("timestamp", desc=True)\
         .execute()
-
     if not logs_resp.data:
         messages.warning(request, "No log entries found.")
         return render(request, "files/logs.html", {"logs": []})
@@ -159,6 +152,7 @@ def logs(request):
             continue
 
     return render(request, "files/logs.html", {"logs": decrypted_logs})
+
 
 
 
