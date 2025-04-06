@@ -55,10 +55,8 @@ def home(request):
 from dateutil.parser import parse as parse_date
 
 def logs(request):
-    """Fetch logs for employees under the logged-in manager, decrypt record name, and show decrypted values."""
-
-    import os
-
+    """Fetch and decrypt employee logs under current manager."""
+    
     def is_valid_hex(s):
         if not isinstance(s, str) or len(s) % 2 != 0:
             return False
@@ -68,90 +66,84 @@ def logs(request):
         except ValueError:
             return False
 
-    # 🔐 Load encryption keys from environment variables
     try:
-        pub = int(os.environ.get("PAILLIER_PUB"))
-        priv1 = int(os.environ.get("PAILLIER_PRIV1"))
-        priv2 = int(os.environ.get("PAILLIER_PRIV2"))
-        aes_key = bytes.fromhex(os.environ.get("AES_KEY"))
-    except (TypeError, ValueError) as e:
-        messages.error(request, f"Missing or invalid encryption environment variables: {e}")
+        pub = int(os.environ["PAILLIER_PUB"])
+        priv1 = int(os.environ["PAILLIER_PRIV1"])
+        priv2 = int(os.environ["PAILLIER_PRIV2"])
+        aes_key = bytes.fromhex(os.environ["AES_KEY"])
+    except Exception as e:
+        messages.error(request, f"Encryption environment variables missing/invalid: {e}")
         return render(request, "files/logs.html", {"logs": []})
 
-    manager_id = request.user.id
+    # Fetch employees under manager
     emp_resp = supabase.table("files_employee")\
         .select("id")\
-        .eq("manager_id", manager_id)\
+        .eq("manager_id", request.user.id)\
         .execute()
+    
     if not emp_resp.data:
-        messages.error(request, "No employees found under this manager.")
+        messages.info(request, "No employees found.")
         return render(request, "files/logs.html", {"logs": []})
+
     emp_ids = [e["id"] for e in emp_resp.data]
 
+    # Fetch logs
     logs_resp = supabase.table("files_log")\
         .select("*, data_record:files_datarecord(record_name), employee:files_employee(name)")\
         .in_("employee_id", emp_ids)\
         .order("timestamp", desc=True)\
         .execute()
-    if not logs_resp.data:
-        messages.warning(request, "No log entries found.")
-        return render(request, "files/logs.html", {"logs": []})
 
     decrypted_logs = []
+
     for entry in logs_resp.data:
         try:
-            print("\n📄 Processing Log Entry...")
+            print("\n🔍 Processing Log Entry")
 
-            record_obj = entry.get("data_record") or {}
-            emp_obj = entry.get("employee") or {}
+            emp = entry.get("employee", {})
+            data_rec = entry.get("data_record", {})
 
-            enc_hex = record_obj.get("record_name", "")
-            if enc_hex and is_valid_hex(enc_hex):
-                record_name = AESCipher.decrypt(aes_key, bytes.fromhex(enc_hex))
-                print(f"  [AES] Encrypted Record Name (hex): {enc_hex}")
-                print(f"  [AES] → Decrypted Record Name: {record_name}")
+            # 🔐 AES Decrypt record name
+            enc_name = data_rec.get("record_name", "")
+            if is_valid_hex(enc_name):
+                decrypted_name = AESCipher.decrypt(aes_key, bytes.fromhex(enc_name))
             else:
-                print(f"  ⚠️ Invalid AES hex: {enc_hex}")
-                continue
+                decrypted_name = "❌ Invalid AES"
 
-            qty_cipher = entry.get("quantity")
-            cost_cipher = entry.get("cost")
-
-            # Decrypt Paillier-encrypted quantity
+            # 🔐 Paillier Decrypt quantity
+            qty_enc = entry.get("quantity")
             try:
-                quantity = paillier.decrypt(priv1, priv2, pub, int(qty_cipher))
-                print(f"  [Paillier] Encrypted Quantity: {qty_cipher}")
-                print(f"  [Paillier] → Decrypted Quantity: {quantity}")
-            except Exception as e:
-                print(f"  ⚠️ Quantity decryption failed: {e}")
-                quantity = "N/A"
+                qty_dec = paillier.decrypt(priv1, priv2, pub, int(qty_enc)) if qty_enc else "N/A"
+            except Exception:
+                qty_dec = "❌ Error"
 
-            # Decrypt Paillier-encrypted cost
+            # 🔐 Paillier Decrypt cost
+            cost_enc = entry.get("cost")
             try:
-                cost = paillier.decrypt(priv1, priv2, pub, int(cost_cipher))
-                print(f"  [Paillier] Encrypted Cost: {cost_cipher}")
-                print(f"  [Paillier] → Decrypted Cost: {cost}")
-            except Exception as e:
-                print(f"  ⚠️ Cost decryption failed: {e}")
-                cost = "N/A"
+                cost_dec = paillier.decrypt(priv1, priv2, pub, int(cost_enc)) if cost_enc else "N/A"
+            except Exception:
+                cost_dec = "❌ Error"
 
+            # 🕒 Format timestamp
             ts = entry.get("timestamp")
-            timestamp = parse_datetime(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else "N/A"
+            ts_fmt = parse_datetime(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else "N/A"
 
-            decrypted_logs.append({
-                "timestamp": timestamp,
-                "employee_name": emp_obj.get("name", "Unknown"),
-                "record_name": record_name,
-                "record_name_enc": enc_hex,
-                "quantity_enc": qty_cipher,
-                "quantity_dec": quantity,
-                "cost_enc": cost_cipher,
-                "cost_dec": cost,
-            })
+            log_obj = {
+                "timestamp": ts_fmt,
+                "employee_name": emp.get("name", "Unknown"),
+                "record_name": decrypted_name,
+                "record_name_enc": enc_name,
+                "quantity_enc": qty_enc,
+                "quantity_dec": qty_dec,
+                "cost_enc": cost_enc,
+                "cost_dec": cost_dec
+            }
+
+            print("✅ Decrypted Log:", log_obj)
+            decrypted_logs.append(log_obj)
 
         except Exception as e:
-            print(f"⚠️ Error processing log entry: {e}")
-            continue
+            print("⚠️ Log entry error:", e)
 
     return render(request, "files/logs.html", {"logs": decrypted_logs})
 
