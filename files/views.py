@@ -615,7 +615,10 @@ def addDataRecord(request, employee_id):
             new_qty = paillier.e_add(pub_key, existing_qty, encrypted_qty)
             print(f"   → Updated quantity ciphertext: {new_qty}")
             supabase.table("files_datarecord")\
-                .update({"record_content": str(new_qty)})\
+                .update({
+                    "record_content": str(new_qty),
+                    "quantity": str(new_qty)
+                })\
                 .eq("record_name", encrypted_name).execute()
             data_record_id = existing[0]["id"]
         else:
@@ -625,21 +628,23 @@ def addDataRecord(request, employee_id):
                 "record_name": encrypted_name,
                 "record_content": str(encrypted_qty),
                 "date_added": timestamp,
-                "quantity": quantity,
-                "cost": cost
+                "quantity": str(encrypted_qty),  # encrypted string
+                "cost": str(encrypted_cost)      # encrypted string
             }).execute()
             data_record_id = resp.data[0]["id"]
             print(f"   → Inserted record ID: {data_record_id}")
 
-        # Log the operation
+        # Log the operation including decrypted values
         print(f"📝 Logging operation for data_record_id={data_record_id}")
         supabase.table("files_log").insert({
-            "employee_id": employee.id,
+            "employee_id":    employee.id,
             "data_record_id": data_record_id,
-            "timestamp": timestamp,
-            "quantity": quantity,
-            "cost": cost,
-            "action": f"Encrypted record '{name}' stored"
+            "timestamp":      timestamp,
+            "quantity":       str(encrypted_qty),     # encrypted
+            "cost":           str(encrypted_cost),     # encrypted
+            "quantity_dec":   str(quantity),           # decrypted quantity
+            "cost_dec":       str(int(cost)),          # decrypted cost
+            "action":         f"Encrypted record '{name}' stored"
         }).execute()
 
         return JsonResponse({"message": "Data record and log saved!"}, status=201)
