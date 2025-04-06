@@ -58,36 +58,31 @@ def logs(request):
     """Fetch and decrypt employee logs under current manager."""
 
     def is_valid_hex(s):
-        if not isinstance(s, str) or len(s) % 2 != 0:
-            return False
-        try:
-            bytes.fromhex(s)
-            return True
-        except ValueError:
-            return False
+        return isinstance(s, str) and len(s) % 2 == 0 and all(c in '0123456789abcdefABCDEF' for c in s)
 
+    # 🔐 Get decryption keys from environment
     try:
         pub = int(os.environ["PAILLIER_PUB"])
         priv1 = int(os.environ["PAILLIER_PRIV1"])
         priv2 = int(os.environ["PAILLIER_PRIV2"])
         aes_key = bytes.fromhex(os.environ["AES_KEY"])
     except Exception as e:
-        messages.error(request, f"Encryption environment variables missing/invalid: {e}")
+        messages.error(request, f"Encryption keys missing or invalid: {e}")
         return render(request, "files/logs.html", {"logs": []})
 
-    # Fetch employees under manager
+    # 👤 Get employee IDs under the manager
     emp_resp = supabase.table("files_employee")\
         .select("id")\
         .eq("manager_id", request.user.id)\
         .execute()
-    
+
     if not emp_resp.data:
         messages.info(request, "No employees found.")
         return render(request, "files/logs.html", {"logs": []})
 
-    emp_ids = [e["id"] for e in emp_resp.data]
+    emp_ids = [emp["id"] for emp in emp_resp.data]
 
-    # Fetch logs
+    # 📄 Fetch logs for these employees
     logs_resp = supabase.table("files_log")\
         .select("*, data_record:files_datarecord(record_name), employee:files_employee(name)")\
         .in_("employee_id", emp_ids)\
@@ -98,26 +93,24 @@ def logs(request):
 
     for entry in logs_resp.data:
         try:
-            print("\n🔍 Processing Log Entry")
-
             emp = entry.get("employee", {})
             data_rec = entry.get("data_record", {})
-
-            # 🔐 AES Decrypt record name
             enc_name = data_rec.get("record_name", "")
+
+            # 🔐 Decrypt record name (AES)
             if is_valid_hex(enc_name):
                 decrypted_name = AESCipher.decrypt(aes_key, bytes.fromhex(enc_name))
             else:
                 decrypted_name = "❌ Invalid AES"
 
-            # 🔐 Paillier Decrypt quantity
+            # 🔐 Decrypt quantity (Paillier)
             qty_enc = entry.get("quantity")
             try:
                 qty_dec = paillier.decrypt(priv1, priv2, pub, int(qty_enc, 16)) if qty_enc else "N/A"
             except Exception:
                 qty_dec = "❌ Error"
 
-            # 🔐 Paillier Decrypt cost
+            # 🔐 Decrypt cost (Paillier)
             cost_enc = entry.get("cost")
             try:
                 cost_dec = paillier.decrypt(priv1, priv2, pub, int(cost_enc, 16)) if cost_enc else "N/A"
@@ -128,6 +121,7 @@ def logs(request):
             ts = entry.get("timestamp")
             ts_fmt = parse_datetime(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else "N/A"
 
+            # 📦 Build log object
             log_obj = {
                 "timestamp": ts_fmt,
                 "employee_name": emp.get("name", "Unknown"),
@@ -139,14 +133,12 @@ def logs(request):
                 "cost_dec": cost_dec
             }
 
-            print("✅ Decrypted Log:", log_obj)
             decrypted_logs.append(log_obj)
 
         except Exception as e:
-            print("⚠️ Log entry error:", e)
+            print("⚠️ Error processing log entry:", e)
 
     return render(request, "files/logs.html", {"logs": decrypted_logs})
-
 
 def logout_view(request):
     """Logs out the user and redirects to the home page."""
