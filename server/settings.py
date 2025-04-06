@@ -17,6 +17,9 @@ import dj_database_url
 from dotenv import load_dotenv
 import environ
 from pathlib import Path
+# At the top of your settings.py
+from dotenv import load_dotenv
+load_dotenv()
 
 
 env = environ.Env()
@@ -35,7 +38,6 @@ DEBUG = False
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 LOGIN_URL = '/managerLogin/'  # ✅ Change this to match your actual login URL
-load_dotenv()
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
 

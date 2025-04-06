@@ -22,8 +22,8 @@
                         <td>{{ log.timestamp }}</td>
                         <td>{{ log.employee_name }}</td>
                         <td>{{ log.record_name }}</td> <!-- AES encrypted -->
-                        <td>{{ record.quantity_dec }}</td>
-                        <td>{{ record.cost_dec }}</td>                              <!-- Paillier encrypted -->
+                        <td>{{ log.quantity_dec }}</td>     <!-- Paillier encrypted -->
+                        <td>{{ log.cost_dec }}</td>         <!-- Paillier encrypted -->
                     </tr>
                     {% empty %}
                     <tr>

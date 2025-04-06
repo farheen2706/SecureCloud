@@ -55,90 +55,118 @@ def home(request):
 from dateutil.parser import parse as parse_date
 
 def logs(request):
-    """Fetch and decrypt employee logs under current manager."""
+    """Fetch logs for employees under the logged-in manager, decrypt record name, and show encrypted/decrypted values."""
 
     def is_valid_hex(s):
-        return isinstance(s, str) and len(s) % 2 == 0 and all(c in '0123456789abcdefABCDEF' for c in s)
+        if not isinstance(s, str) or len(s) % 2 != 0:
+            return False
+        try:
+            bytes.fromhex(s)
+            return True
+        except ValueError:
+            return False
 
-    # 🔐 Get decryption keys from environment
+    import os
+
+    def is_valid_hex(s):
+        if not isinstance(s, str) or len(s) % 2 != 0:
+            return False
+        try:
+            bytes.fromhex(s)
+            return True
+        except ValueError:
+            return False
+
+    # 🔐 Load encryption keys from environment variables
     try:
-        pub = int(os.environ["PAILLIER_PUB"])
-        priv1 = int(os.environ["PAILLIER_PRIV1"])
-        priv2 = int(os.environ["PAILLIER_PRIV2"])
-        aes_key = bytes.fromhex(os.environ["AES_KEY"])
-    except Exception as e:
-        messages.error(request, f"Encryption keys missing or invalid: {e}")
+        pub = int(os.environ.get("PAILLIER_PUB"))
+        priv1 = int(os.environ.get("PAILLIER_PRIV1"))
+        priv2 = int(os.environ.get("PAILLIER_PRIV2"))
+        aes_key = bytes.fromhex(os.environ.get("AES_KEY"))
+    except (TypeError, ValueError) as e:
+        messages.error(request, f"Missing or invalid encryption environment variables: {e}")
         return render(request, "files/logs.html", {"logs": []})
 
-    # 👤 Get employee IDs under the manager
+    manager_id = request.user.id
     emp_resp = supabase.table("files_employee")\
         .select("id")\
-        .eq("manager_id", request.user.id)\
+        .eq("manager_id", manager_id)\
         .execute()
-
     if not emp_resp.data:
-        messages.info(request, "No employees found.")
+        messages.error(request, "No employees found under this manager.")
         return render(request, "files/logs.html", {"logs": []})
+    emp_ids = [e["id"] for e in emp_resp.data]
 
-    emp_ids = [emp["id"] for emp in emp_resp.data]
-
-    # 📄 Fetch logs for these employees
     logs_resp = supabase.table("files_log")\
         .select("*, data_record:files_datarecord(record_name), employee:files_employee(name)")\
         .in_("employee_id", emp_ids)\
         .order("timestamp", desc=True)\
         .execute()
+    if not logs_resp.data:
+        messages.warning(request, "No log entries found.")
+        return render(request, "files/logs.html", {"logs": []})
 
     decrypted_logs = []
-
     for entry in logs_resp.data:
         try:
-            emp = entry.get("employee", {})
-            data_rec = entry.get("data_record", {})
-            enc_name = data_rec.get("record_name", "")
+            print("\n📄 Processing Log Entry...")
 
-            # 🔐 Decrypt record name (AES)
-            if is_valid_hex(enc_name):
-                decrypted_name = AESCipher.decrypt(aes_key, bytes.fromhex(enc_name))
+            record_obj = entry.get("data_record") or {}
+            emp_obj = entry.get("employee") or {}
+
+            enc_hex = record_obj.get("record_name", "")
+            if enc_hex and is_valid_hex(enc_hex):
+                record_name = AESCipher.decrypt(aes_key, bytes.fromhex(enc_hex))
+                print(f"  [AES] Encrypted Record Name (hex): {enc_hex}")
+                print(f"  [AES] → Decrypted Record Name: {record_name}")
             else:
-                decrypted_name = "❌ Invalid AES"
+                print(f"  ⚠️ Invalid AES hex: {enc_hex}")
+                continue
 
-            # 🔐 Decrypt quantity (Paillier)
-            qty_enc = entry.get("quantity")
-            try:
-                qty_dec = paillier.decrypt(priv1, priv2, pub, int(qty_enc, 16)) if qty_enc else "N/A"
-            except Exception:
-                qty_dec = "❌ Error"
+            qty_cipher = entry.get("quantity")
+            cost_cipher = entry.get("cost")
 
-            # 🔐 Decrypt cost (Paillier)
-            cost_enc = entry.get("cost")
-            try:
-                cost_dec = paillier.decrypt(priv1, priv2, pub, int(cost_enc, 16)) if cost_enc else "N/A"
-            except Exception:
-                cost_dec = "❌ Error"
+            if qty_cipher is not None:
+                quantity = paillier.decrypt(priv1, priv2, pub, int(qty_cipher))
+                print(f"  [Paillier] Encrypted Quantity: {qty_cipher}")
+                print(f"  [Paillier] → Decrypted Quantity: {qty_cipher}")
+            else:
+                qty_cipher = "N/A"
+                quantity = "N/A"
 
-            # 🕒 Format timestamp
+            if cost_cipher is not None:
+                cost = paillier.decrypt(priv1, priv2, pub, int(cost_cipher))
+                print(f"  [Paillier] Encrypted Cost: {cost_cipher}")
+                print(f"  [Paillier] → Decrypted Cost: {cost_cipher}")
+            else:
+                cost_cipher = "N/A"
+                cost = "N/A"
+
             ts = entry.get("timestamp")
-            ts_fmt = parse_datetime(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else "N/A"
+            timestamp = parse_datetime(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else "N/A"
 
-            # 📦 Build log object
-            log_obj = {
-                "timestamp": ts_fmt,
-                "employee_name": emp.get("name", "Unknown"),
-                "record_name": decrypted_name,
-                "record_name_enc": enc_name,
-                "quantity_enc": qty_enc,
-                "quantity_dec": qty_dec,
-                "cost_enc": cost_enc,
-                "cost_dec": cost_dec
-            }
-
-            decrypted_logs.append(log_obj)
+            decrypted_logs.append({
+                "timestamp": timestamp,
+                "employee_name": emp_obj.get("name", "Unknown"),
+                "record_name": record_name,
+                "record_name_enc": enc_hex,
+                "quantity_enc": qty_cipher,
+                "quantity_dec": quantity,
+                "cost_enc": cost_cipher,
+                "cost_dec": cost,
+            })
 
         except Exception as e:
-            print("⚠️ Error processing log entry:", e)
+            print(f"⚠️ Error processing log entry: {e}")
+            continue
 
     return render(request, "files/logs.html", {"logs": decrypted_logs})
+
+
+
+
+
+
 
 def logout_view(request):
     """Logs out the user and redirects to the home page."""
@@ -587,10 +615,7 @@ def addDataRecord(request, employee_id):
             new_qty = paillier.e_add(pub_key, existing_qty, encrypted_qty)
             print(f"   → Updated quantity ciphertext: {new_qty}")
             supabase.table("files_datarecord")\
-                .update({
-                    "record_content": str(new_qty),
-                    "quantity": str(new_qty)
-                })\
+                .update({"record_content": str(new_qty)})\
                 .eq("record_name", encrypted_name).execute()
             data_record_id = existing[0]["id"]
         else:
@@ -600,23 +625,21 @@ def addDataRecord(request, employee_id):
                 "record_name": encrypted_name,
                 "record_content": str(encrypted_qty),
                 "date_added": timestamp,
-                "quantity": str(encrypted_qty),  # encrypted string
-                "cost": str(encrypted_cost)      # encrypted string
+                "quantity": quantity,
+                "cost": cost
             }).execute()
             data_record_id = resp.data[0]["id"]
             print(f"   → Inserted record ID: {data_record_id}")
 
-        # Log the operation including decrypted values
+        # Log the operation
         print(f"📝 Logging operation for data_record_id={data_record_id}")
         supabase.table("files_log").insert({
-            "employee_id":    employee.id,
+            "employee_id": employee.id,
             "data_record_id": data_record_id,
-            "timestamp":      timestamp,
-            "quantity":       str(encrypted_qty),     # encrypted
-            "cost":           str(encrypted_cost),     # encrypted
-            "quantity_dec":   str(quantity),           # decrypted quantity
-            "cost_dec":       str(int(cost)),          # decrypted cost
-            "action":         f"Encrypted record '{name}' stored"
+            "timestamp": timestamp,
+            "quantity": quantity,
+            "cost": cost,
+            "action": f"Encrypted record '{name}' stored"
         }).execute()
 
         return JsonResponse({"message": "Data record and log saved!"}, status=201)
@@ -624,72 +647,3 @@ def addDataRecord(request, employee_id):
     except Exception as e:
         print(f"❌ Error during encryption/storage: {e}")
         return JsonResponse({"error": str(e)}, status=500)
-
-    
-# def register(request):
-#     CompanyData_name = "Crocin"
-#     file = open('manager.txt')
-#     all_lines = file.readlines()
-#     key = all_lines[3]
-#     key = key[2:-1]
-#     key = key.encode('UTF-8')
-#     encrypt_msg = AESCipher.encrypt(CompanyData_name, key)
-
-#     return HttpResponse("<h1>Holla modamustfakaa</h1>")
-
-# def register_med(request):
-
-#     if request.method =='POST':
-#         CompanyData = CompanyData(request.POST)
-#         if CompanyData.is_valid():
-#             CompanyData1 = CompanyData.save(commit=False)
-#             priv,pub = paillier.generate_keypair(256)
-#             a = priv.get_list()
-#             priv1=a[0]
-#             priv2 = a[1]
-#             CompanyData1.privateKey_1 = priv1
-#             CompanyData1.privateKey_2 = priv2
-#             CompanyData1.publicKey = pub
-#             CompanyData1.save()
-
-#             return redirect('/home/')
-#     else:
-#         CompanyData = CompanyData()
-#     return render(request,'files/test.html',{'CompanyData':CompanyData})
-
-# def add_DataRecord(request,med_id):
-#     medic = Key.objects.get(id = med_id)
-#     if request.method == 'POST':
-#         constituent = Constituent(request.POST)
-#         if constituent.is_valid():
-#             constituent1 = constituent.save(commit=False)
-#             quant = int(constituent1.DataRecord_quantity)
-#             cost = int(constituent1.DataRecord_cost)
-#             pub = int(medic.publicKey)
-#             new_cost= paillier.encrypt(int(pub),cost)
-#             new_quant = paillier.encrypt(pub,quant)
-#             constituent1.DataRecord_quantity = new_quant
-#             constituent1.DataRecord_cost = new_cost
-#             constituent1.key = medic
-#             constituent1.save()
-#             return redirect('/home/')
-#     else:
-#         constituent = Constituent()
-#     return render(request,'files/constituent.html',{'constituent':constituent,'medic':medic})
-
-# def home(request):
-#     items = Key.objects.all()
-
-#     return render(request,'files/home.html',{'items':items})
-
-# def retrieve_DataRecords(request,id):
-#     medic = Key.objects.get(id = id)
-#     compo = DataRecord.objects.filter(key=medic)
-#     a = {}
-#     for c in compo:
-#         c.DataRecord_cost = paillier.decrypt(int(medic.privateKey_1),int(medic.privateKey_2),int(medic.publicKey),int(c.DataRecord_cost))
-#         c.DataRecord_quantity = paillier.decrypt(int(medic.privateKey_1), int(medic.privateKey_2), int(medic.publicKey),
-#                                             int(c.DataRecord_quantity))
-#         a[c.DataRecord_name] = [c.DataRecord_cost,c.DataRecord_quantity]
-
-#     return render(request,'files/detail.html',{'a':a,'compo':compo})
