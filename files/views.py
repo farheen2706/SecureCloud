@@ -631,13 +631,14 @@ def addDataRecord(request, employee_id):
         # Log the operation
         print(f"📝 Logging operation for data_record_id={data_record_id}")
         supabase.table("files_log").insert({
-            "employee_id": employee.id,
-            "data_record_id": data_record_id,
-            "timestamp": timestamp,
-            "quantity": quantity,
-            "cost": cost,
-            "action": f"Encrypted record '{name}' stored"
-        }).execute()
+                "employee_id":    employee.id,
+                "data_record_id": data_record_id,
+                "timestamp":      timestamp,
+                "quantity":       str(encrypted_qty),   # ← Paillier ciphertext
+                "cost":           str(encrypted_cost),  # ← Paillier ciphertext
+                "action":         f"Encrypted record '{name}' stored"
+            }).execute()
+
 
         return JsonResponse({"message": "Data record and log saved!"}, status=201)
 
