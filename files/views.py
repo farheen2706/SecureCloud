@@ -80,7 +80,7 @@ def logs(request):
         .select("id")\
         .eq("manager_id", request.user.id)\
         .execute()
-
+    
     if not emp_resp.data:
         messages.info(request, "No employees found.")
         return render(request, "files/logs.html", {"logs": []})
@@ -110,25 +110,17 @@ def logs(request):
             else:
                 decrypted_name = "❌ Invalid AES"
 
-            # 🔐 Paillier Decrypt & Decode quantity
+            # 🔐 Paillier Decrypt quantity
             qty_enc = entry.get("quantity")
             try:
-                if qty_enc:
-                    qty_raw = paillier.decrypt(priv1, priv2, pub, int(qty_enc))
-                    qty_dec = paillier.decode(qty_raw)
-                else:
-                    qty_dec = "N/A"
+                qty_dec = paillier.decrypt(priv1, priv2, pub, int(qty_enc, 16)) if qty_enc else "N/A"
             except Exception:
                 qty_dec = "❌ Error"
 
-            # 🔐 Paillier Decrypt & Decode cost
+            # 🔐 Paillier Decrypt cost
             cost_enc = entry.get("cost")
             try:
-                if cost_enc:
-                    cost_raw = paillier.decrypt(priv1, priv2, pub, int(cost_enc))
-                    cost_dec = paillier.decode(cost_raw)
-                else:
-                    cost_dec = "N/A"
+                cost_dec = paillier.decrypt(priv1, priv2, pub, int(cost_enc, 16)) if cost_enc else "N/A"
             except Exception:
                 cost_dec = "❌ Error"
 
