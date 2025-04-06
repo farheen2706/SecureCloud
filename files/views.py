@@ -595,7 +595,10 @@ def addDataRecord(request, employee_id):
             new_qty = paillier.e_add(pub_key, existing_qty, encrypted_qty)
             print(f"   → Updated quantity ciphertext: {new_qty}")
             supabase.table("files_datarecord")\
-                .update({"record_content": str(new_qty)})\
+                .update({
+                    "record_content": str(new_qty),
+                    "quantity": str(new_qty)  # Update encrypted quantity
+                })\
                 .eq("record_name", encrypted_name).execute()
             data_record_id = existing[0]["id"]
         else:
@@ -605,8 +608,8 @@ def addDataRecord(request, employee_id):
                 "record_name": encrypted_name,
                 "record_content": str(encrypted_qty),
                 "date_added": timestamp,
-                "quantity": quantity,
-                "cost": cost
+                "quantity": str(encrypted_qty),  # ✅ Store as encrypted string
+                "cost": str(encrypted_cost)      # ✅ Store as encrypted string
             }).execute()
             data_record_id = resp.data[0]["id"]
             print(f"   → Inserted record ID: {data_record_id}")
@@ -614,20 +617,20 @@ def addDataRecord(request, employee_id):
         # Log the operation
         print(f"📝 Logging operation for data_record_id={data_record_id}")
         supabase.table("files_log").insert({
-                "employee_id":    employee.id,
-                "data_record_id": data_record_id,
-                "timestamp":      timestamp,
-                "quantity":       str(encrypted_qty),   # ← Paillier ciphertext
-                "cost":           str(encrypted_cost),  # ← Paillier ciphertext
-                "action":         f"Encrypted record '{name}' stored"
-            }).execute()
-
+            "employee_id":    employee.id,
+            "data_record_id": data_record_id,
+            "timestamp":      timestamp,
+            "quantity":       str(encrypted_qty),   # ← Paillier ciphertext
+            "cost":           str(encrypted_cost),  # ← Paillier ciphertext
+            "action":         f"Encrypted record '{name}' stored"
+        }).execute()
 
         return JsonResponse({"message": "Data record and log saved!"}, status=201)
 
     except Exception as e:
         print(f"❌ Error during encryption/storage: {e}")
         return JsonResponse({"error": str(e)}, status=500)
+
     
 # def register(request):
 #     CompanyData_name = "Crocin"
