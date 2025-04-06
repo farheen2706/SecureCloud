@@ -55,7 +55,7 @@ def home(request):
 from dateutil.parser import parse as parse_date
 
 def logs(request):
-    """Fetch logs for employees under the logged-in manager, decrypt record name, and show encrypted/decrypted values."""
+    """Fetch logs for employees under the logged-in manager, decrypt record name, and show decrypted values."""
 
     import os
 
@@ -117,20 +117,22 @@ def logs(request):
             qty_cipher = entry.get("quantity")
             cost_cipher = entry.get("cost")
 
-            if qty_cipher is not None:
+            # Decrypt Paillier-encrypted quantity
+            try:
                 quantity = paillier.decrypt(priv1, priv2, pub, int(qty_cipher))
                 print(f"  [Paillier] Encrypted Quantity: {qty_cipher}")
                 print(f"  [Paillier] → Decrypted Quantity: {quantity}")
-            else:
-                qty_cipher = "N/A"
+            except Exception as e:
+                print(f"  ⚠️ Quantity decryption failed: {e}")
                 quantity = "N/A"
 
-            if cost_cipher is not None:
+            # Decrypt Paillier-encrypted cost
+            try:
                 cost = paillier.decrypt(priv1, priv2, pub, int(cost_cipher))
                 print(f"  [Paillier] Encrypted Cost: {cost_cipher}")
                 print(f"  [Paillier] → Decrypted Cost: {cost}")
-            else:
-                cost_cipher = "N/A"
+            except Exception as e:
+                print(f"  ⚠️ Cost decryption failed: {e}")
                 cost = "N/A"
 
             ts = entry.get("timestamp")
@@ -152,13 +154,6 @@ def logs(request):
             continue
 
     return render(request, "files/logs.html", {"logs": decrypted_logs})
-
-
-
-
-
-
-
 
 
 def logout_view(request):
