@@ -554,18 +554,14 @@ def addDataRecord(request, employee_id):
     company = employee.company
 
     # Load keys
-    key_file = "employee.txt"
-    if not os.path.exists(key_file):
-        messages.error(request, "Encryption key file missing.")
-        return render(request, "files/employee.html", {"employee": employee})
+    import os
 
-    lines = open(key_file).read().splitlines()
-    if len(lines) < 2:
-        messages.error(request, "Invalid encryption key file format.")
+    try:
+        pub_key = int(os.environ.get("PUBLIC_KEY"))
+        aes_key = bytes.fromhex(os.environ.get("AES_KEY"))
+    except Exception as e:
+        messages.error(request, f"Key load error: {e}")
         return render(request, "files/employee.html", {"employee": employee})
-
-    pub_key = int(lines[0])
-    aes_key = bytes.fromhex(lines[1])
 
     if request.method == "GET":
         return render(request, "files/employee.html", {"employee": employee})
