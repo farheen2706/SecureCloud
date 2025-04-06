@@ -56,7 +56,7 @@ from dateutil.parser import parse as parse_date
 
 def logs(request):
     """Fetch and decrypt employee logs under current manager."""
-    
+
     def is_valid_hex(s):
         if not isinstance(s, str) or len(s) % 2 != 0:
             return False
@@ -80,7 +80,7 @@ def logs(request):
         .select("id")\
         .eq("manager_id", request.user.id)\
         .execute()
-    
+
     if not emp_resp.data:
         messages.info(request, "No employees found.")
         return render(request, "files/logs.html", {"logs": []})
@@ -110,17 +110,25 @@ def logs(request):
             else:
                 decrypted_name = "❌ Invalid AES"
 
-            # 🔐 Paillier Decrypt quantity
+            # 🔐 Paillier Decrypt & Decode quantity
             qty_enc = entry.get("quantity")
             try:
-                qty_dec = paillier.decrypt(priv1, priv2, pub, int(qty_enc)) if qty_enc else "N/A"
+                if qty_enc:
+                    qty_raw = paillier.decrypt(priv1, priv2, pub, int(qty_enc))
+                    qty_dec = paillier.decode(qty_raw)
+                else:
+                    qty_dec = "N/A"
             except Exception:
                 qty_dec = "❌ Error"
 
-            # 🔐 Paillier Decrypt cost
+            # 🔐 Paillier Decrypt & Decode cost
             cost_enc = entry.get("cost")
             try:
-                cost_dec = paillier.decrypt(priv1, priv2, pub, int(cost_enc)) if cost_enc else "N/A"
+                if cost_enc:
+                    cost_raw = paillier.decrypt(priv1, priv2, pub, int(cost_enc))
+                    cost_dec = paillier.decode(cost_raw)
+                else:
+                    cost_dec = "N/A"
             except Exception:
                 cost_dec = "❌ Error"
 
