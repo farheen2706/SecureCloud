@@ -597,7 +597,7 @@ def addDataRecord(request, employee_id):
             supabase.table("files_datarecord")\
                 .update({
                     "record_content": str(new_qty),
-                    "quantity": str(new_qty)  # Update encrypted quantity
+                    "quantity": str(new_qty)
                 })\
                 .eq("record_name", encrypted_name).execute()
             data_record_id = existing[0]["id"]
@@ -608,20 +608,22 @@ def addDataRecord(request, employee_id):
                 "record_name": encrypted_name,
                 "record_content": str(encrypted_qty),
                 "date_added": timestamp,
-                "quantity": str(encrypted_qty),  # ✅ Store as encrypted string
-                "cost": str(encrypted_cost)      # ✅ Store as encrypted string
+                "quantity": str(encrypted_qty),  # encrypted string
+                "cost": str(encrypted_cost)      # encrypted string
             }).execute()
             data_record_id = resp.data[0]["id"]
             print(f"   → Inserted record ID: {data_record_id}")
 
-        # Log the operation
+        # Log the operation including decrypted values
         print(f"📝 Logging operation for data_record_id={data_record_id}")
         supabase.table("files_log").insert({
             "employee_id":    employee.id,
             "data_record_id": data_record_id,
             "timestamp":      timestamp,
-            "quantity":       str(encrypted_qty),   # ← Paillier ciphertext
-            "cost":           str(encrypted_cost),  # ← Paillier ciphertext
+            "quantity":       str(encrypted_qty),     # encrypted
+            "cost":           str(encrypted_cost),     # encrypted
+            "quantity_dec":   str(quantity),           # decrypted quantity
+            "cost_dec":       str(int(cost)),          # decrypted cost
             "action":         f"Encrypted record '{name}' stored"
         }).execute()
 
